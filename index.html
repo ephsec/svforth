@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang='en-US'>
+<head>
+    <meta charset='utf-8'>
+    <title>SVFORTH</title>
+</head>
+
+
+<body>
+  <script src='lib/Ractive.min.js'></script>
+  <script src='forth.js'></script>
+  <script src='rss.js'></script>
+
+  <div id='injection'></div>
+
+  <script>function takeInput()
+  { forthInput = document.getElementById('forth-input')
+    forthparser.execute( forthInput.value )
+    forthInput.value = ""
+  }
+  </script>
+
+  <form action="javascript:takeInput()">
+    <input type="text" id="forth-input" name="forth-input"
+           style='width:100%'>
+  </form>
+  <table width='100%'>
+    <tr>
+      <tr>
+        <td valign='top'>
+          <canvas id="canvas" width="800" height="600"></canvas>
+        </td>
+      </tr>
+      <td valign='bottom'>
+          <h3>Stack</h3>
+          <div id='stacklist'>
+          </div>
+          <script>
+             ractive = new Ractive({
+                el: stacklist,
+                template: "<ul> \
+                      {{#stackitems}} \
+                      <div>{{{ JSON.stringify( . ) }}}</div> \
+                      {{/stackitems}} \
+                      </ul>",
+             data: {
+                stackitems: stack.as_array
+            }});
+          </script>
+      </td>
+    </tr>
+  </table>
+
+  <script src='forth/canvas.js'></script> 
+  <script src='forth/binary.js'></script>
+
+</body>
+
+</html>
