@@ -154,6 +154,7 @@ function Canvas() {
 Word("red", "200 0 0")
 Word("green", "0 200 0")
 Word("blue", "0 0 200")
+
 Word("cascade", 
   "canvas pickcanvas blue fillcolor   ( initial setup ) \
    0                                  ( we begin with 0 on the stack ) \
@@ -164,7 +165,16 @@ Word("cascade",
     1 +                               ( the remaining value is incremented ) \
     dup dup dup fillcolor             ( duplicated three times for color set ) \
    again                              ( the loop is started again )")
+
 Word("randrect",
-  "canvas pickcanvas 200 tokenresolution begin 0 255 rand 0 255 rand 0 255 rand fillcolor 0 800 rand 0 600 rand 0 800 rand 0 600 rand rect again")
+  "canvas pickcanvas                  ( initial setup ) \
+   200 tokenresolution                ( allow browser update every 200 token ) \
+   begin \
+    0 255 rand 0 255 rand 0 255 rand  ( pick a random RGB value ) \
+    fillcolor                         ( set our color to the RGB value above ) \
+    0 800 rand 0 600 rand             ( pick a corner of our rectangle ) \
+    0 800 rand 0 600 rand             ( pick another corner of our rectangle ) \
+    rect                              ( actually draw our rectangle ) \
+   again")
 
 canvas = Canvas()
