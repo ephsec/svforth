@@ -546,7 +546,6 @@ function Execution()
       }
     } else if ( typeof( currToken ) == 'function' ) {
       // We're a closure, so invoke it directly.
-      console.log( self.tokens )
       currToken( self.nextToken );
 
     } else {
