@@ -2,52 +2,40 @@ function Canvas() {
   var currCanvas = undefined
   var currContext = undefined
 
-  this.canvas = function(callback) {
-    currCanvas = document.getElementById( stack.pop() )
-    currContext = currCanvas.getContext("2d")
-    executeCallback(callback)
-  }
+  // ************************************************************************
+  // Internal helper functions for our canvas routines
+  // ************************************************************************
 
-  this.fillStyle = function(callback) {
-    b = stack.pop()
-    g = stack.pop()
-    r = stack.pop()
-    currContext.fillStyle = "rgb(" + [r,g,b].join(",") + ")"
-    executeCallback(callback)
-  }
-
-  this.fillRect = function(callback) {
-    y2 = stack.pop()
-    x2 = stack.pop()
-    y1 = stack.pop()
-    x1 = stack.pop()
-    currContext.fillRect(x1, y1, x2, y2)
-    executeCallback(callback)
-  }
-
+  // given an object, we ensure that it is a TypedArray and do the neccessary
+  // conversions
+  // TODO: Implement detection and coercion of an Array of Integers
   var coerceByteArray = function(obj) {
-    // the below function and conditionals ensure that what we have
-    // is a Typed Array for optimization reasons
+    // converts string to a TypedArray, assuming that the values are 8-bit
+    // which is actually a dangerous assumption as JavaScript has UTF-16
+    // strings
     function str2ab(str) {
-      var buf = new ArrayBuffer( str.length ); // 2 bytes for each char
+      var buf = new ArrayBuffer( str.length ); // 1 byte for each char
       var bufView = new Uint8Array( buf );
       for ( var i=0, strLen=str.length; i<strLen; i++ ) {
         bufView[i] = str.charCodeAt(i);
       }
-      return buf;
+      return( buf );
     }
 
-    // we're a Typed Array, so go ahead and use that
+    // TypedArrays typically have byteLength properties
     if ( obj.hasOwnProperty( 'byteLength' ) ) {
-      bin = input;
+      // we're a Typed Array, so go ahead and use that
+      return( obj );
     } else {
-      // We have a string, so we need to convert it.
-      bin = str2ab( obj );
+      // probably a string, so we convert it from a string into a TypedArray.
+      return( str2ab( obj ) );
     }
-
-    return( bin );
   }
 
+  // given the TypedArray and the canvas, we determine the maximum
+  // length that we are painting -- if the canvas is larger, the maximum
+  // length is the TypedArray, and if the TypedArray is larger, the canvas
+  // is the maximum length.
   var getMaxLength = function(canv, plane) {
     console.log( canv.width, canv.height, plane.byteLength );
     // We only draw up to the length of the binary, or the total
@@ -60,6 +48,37 @@ function Canvas() {
     return( limit )
   }
 
+  // ***********************************************************************
+  // JavaScript functions for Forth words
+  // ***********************************************************************  
+
+  // select our HTML canvas to draw on
+  this.canvas = function(callback) {
+    currCanvas = document.getElementById( stack.pop() )
+    currContext = currCanvas.getContext("2d")
+    executeCallback(callback)
+  }
+
+  // Set our fill color for shapes
+  this.fillStyle = function(callback) {
+    b = stack.pop()
+    g = stack.pop()
+    r = stack.pop()
+    currContext.fillStyle = "rgb(" + [r,g,b].join(",") + ")"
+    executeCallback(callback)
+  }
+
+  // Draw a rectangle
+  this.fillRect = function(callback) {
+    y2 = stack.pop()
+    x2 = stack.pop()
+    y1 = stack.pop()
+    x1 = stack.pop()
+    currContext.fillRect(x1, y1, x2, y2)
+    executeCallback(callback)
+  }
+
+  // Convert HSV float values into UInt RGB values
   this.HSVtoRGB = function(callback) {
       v = stack.pop();
       s = stack.pop();
@@ -68,16 +87,13 @@ function Canvas() {
       console.log(h, s, v);
 
       var r, g, b, i, f, p, q, t;
-      if (h && s === undefined && v === undefined) {
-          s = h.s, v = h.v, h = h.h;
-      }
+
       i = Math.floor(h * 6);
       f = h * 6 - i;
       p = v * (1 - s);
       q = v * (1 - f * s);
       t = v * (1 - (1 - f) * s);
 
-      console.log("LOGGY:", i,f,p,q,t);
       switch (i % 6) {
           case 0: r = v, g = t, b = p; break;
           case 1: r = q, g = v, b = p; break;
@@ -94,6 +110,8 @@ function Canvas() {
       executeCallback( callback );
   }
 
+  // given three Strings or TypedArray, we draw them onto the current canvas
+  // as RGB values
   this.paintPlanes = function(callback) {
     b = coerceByteArray( stack.pop() );
     g = coerceByteArray( stack.pop() );
@@ -111,14 +129,13 @@ function Canvas() {
     var imageData = currContext.getImageData( 0, 0, width, height );
     var data = imageData.data;
 
-    console.log( redUintArray, greenUintArray, blueUintArray );
-
-    var binIndex = 0;
-    for (var index=0; index<=(limit * 4); index++) {
+    // Note that we are treating the array as a 1D plane rather than
+    // calculating the 1D location based on X and Y coordinates for speed.
+    for (var index=0, var binIndex=0; index<=(limit * 4); index++) {
         data[index] = redUintArray[ binIndex ];     // red
-        data[++index] = greenUintArray[ binIndex ];   // green
-        data[++index] = blueUintArray[ binIndex ];   // blue
-        data[++index] = 255;     // alpha
+        data[++index] = greenUintArray[ binIndex ]; // green
+        data[++index] = blueUintArray[ binIndex ];  // blue
+        data[++index] = 255;                        // alpha
         binIndex++;
     }
 
@@ -128,53 +145,92 @@ function Canvas() {
 
   }
 
+  // A wrapper function that takes a single object and duplicates it onto
+  // the stack three times for callout to paint-rgb for a grayscale image.
   this.paintBinary = function(callback) {
     input = stack.pop();
 
+    // We push a *copy* of the input object, using slice() -- doing otherwise
+    // yields some interesting side effects.
     stack.push(input.slice(0));
     stack.push(input.slice(0));
     stack.push(input.slice(0));
 
-    this.paintPlanes(callback);
+    // Directly call paint-rgb rather than injecting the object onto the 
+    // Forth execution stack.
+    this.paintPlanes( callback );
   }
 
-  Word("pickcanvas", this.canvas)
-  Word("fillcolor", this.fillStyle)
-  Word("rect", this.fillRect)
-  Word("paint-binary", this.paintBinary)
+  // ***********************************************************************
+  // Forth words for canvas operations below
+  // ***********************************************************************  
+
+  // paint-canvas                                              ( canvas -- )
+  //
+  // given canvas, pick the current HTML canvas
+  Word("set-canvas", this.canvas)
+
+  // fillcolor                                         ( red green blue -- )
+  //
+  // given red green and blue as UInt values, select a color
+  Word("set-fill-color", this.fillStyle)
+
+  // draw-rect                                            ( x1 y1 x2 y2 -- )
+  //
+  // given two sets of coordinates, draw a rectangle with the current color
+  Word("draw-rect", this.fillRect)
+
+  // paint-grayscale                                           ( object -- )
+  //
+  // given a Static Array or String, paint values as grayscale onto canvas
+  Word("paint-grayscale", this.paintBinary)
+
+  // paint-rgb                                   ( object object object -- )
+  //
+  // given three Static Array or Strings on the stack, paint values as RGB
   Word("paint-rgb", this.paintPlanes)
+
+  // hsv-to-rgb                   ( hue saturation value -- red green blue )
+  //
+  // given hue, saturation, and value, produce red, green, and blue UInt
   Word("hsv-to-rgb", this.HSVtoRGB)
 
+  // If our HTML document has a 'canvas' element, we select it on
+  // initialization to make things easier on us.
   if ( document.getElementById( 'canvas' ) ) {
     currCanvas = document.getElementById( 'canvas' )
     currContext = currCanvas.getContext( "2d" )
   }
 }
 
-Word("red", "200 0 0")
-Word("green", "0 200 0")
-Word("blue", "0 0 200")
+// Helper definitions to make RGB colors easier
+Word("red", "127 0 0")
+Word("green", "0 127 0")
+Word("blue", "0 0 127")
 
+// infinitely cascade squares filled with progressive colors
 Word("cascade", 
-  "canvas pickcanvas blue fillcolor   ( initial setup ) \
+  "canvas set-canvas                  ( initial setup ) \
+   blue set-fill-color                ( we like blue ) \
    0                                  ( we begin with 0 on the stack ) \
    begin \
-    dup dup dup dup                   ( we duplicate our value four times ) \
-    100 + rot 100 +                   ( we increment last two values by 100 ) \
-    rect                              ( we now have four values to draw with ) \
-    1 +                               ( the remaining value is incremented ) \
-    dup dup dup fillcolor             ( duplicated three times for color set ) \
-   again                              ( the loop is started again )")
+    dup dup dup dup                   ( 4x dup for x1 y1 x2 y2 coords ) \
+    100 + rot 100 +                   ( increment x2 and y2 by 100 for rect ) \
+    draw-rect                         ( draw our rectangle ) \
+    1 +                               ( our iterator value -- increment ) \
+    dup dup dup set-fill-color        ( duplicated three times for color set ) \
+   again")
 
+// infinitely draw random rectangles on our canvas filled with random colors
 Word("randrect",
-  "canvas pickcanvas                  ( initial setup ) \
+  "canvas set-canvas                  ( initial setup ) \
    200 tokenresolution                ( allow browser update every 200 token ) \
    begin \
     0 255 rand 0 255 rand 0 255 rand  ( pick a random RGB value ) \
-    fillcolor                         ( set our color to the RGB value above ) \
+    set-fill-color                    ( set our color to the RGB value above ) \
     0 800 rand 0 600 rand             ( pick a corner of our rectangle ) \
     0 800 rand 0 600 rand             ( pick another corner of our rectangle ) \
-    rect                              ( actually draw our rectangle ) \
+    draw-rect                         ( actually draw our rectangle ) \
    again")
 
 canvas = Canvas()
