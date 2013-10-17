@@ -131,7 +131,7 @@ function Canvas() {
 
     // Note that we are treating the array as a 1D plane rather than
     // calculating the 1D location based on X and Y coordinates for speed.
-    for (var index=0, var binIndex=0; index<=(limit * 4); index++) {
+    for (index=0, binIndex=0; index<=(limit * 4); index++) {
         data[index] = redUintArray[ binIndex ];     // red
         data[++index] = greenUintArray[ binIndex ]; // green
         data[++index] = blueUintArray[ binIndex ];  // blue
@@ -207,6 +207,8 @@ function Canvas() {
 Word("red", "127 0 0")
 Word("green", "0 127 0")
 Word("blue", "0 0 127")
+
+
 
 // infinitely cascade squares filled with progressive colors
 Word("cascade", 

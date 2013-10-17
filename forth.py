@@ -319,10 +319,27 @@ class HTTPHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         if ( self.path == "/" ):
             filePath = "index.html"
+        elif ( self.path[0:4] == "/%22"):
+            # Neat side effect is that if we have HTML in the stack
+            # and evaluate it, it gets sent to the server to retrieve.
+            filePath = self.path[4:-4]
         else:
             filePath = self.path[1:]
 
-        if not os.path.isfile( filePath ):
+        # Poor man's proxy for now, which can be a gaping security hole.
+        if filePath[0:4] == "http":
+            print( filePath )
+            rawData = None
+            try:
+                rawData = urllib2.urlopen( filePath ).read()
+            except:
+                self.send_response( 404 )
+            if rawData:
+                self.wfile.write( rawData )
+            else:
+                self.send_response( 404 )
+
+        elif not os.path.isfile( filePath ):
             self.send_response(404)
             self.end_headers()
         else:
