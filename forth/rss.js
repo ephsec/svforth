@@ -11,7 +11,7 @@ function RSS() {
   // given a RSS feed URL, we fetch the RSS XML into the stack and convert
   // into a Javascript DataStructure
   Word( "get-rss",
-    "get-url          ( fetch our RSS XML feed into the stack ) \
+    "get-http         ( fetch our RSS XML feed into the stack ) \
      xml-to-ds        ( convert our RSS into JS DS ) " );
 
   // get-rss-links                                   ( url -- link1 link2 .. )
