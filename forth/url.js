@@ -25,8 +25,10 @@ function URL() {
   // do not let us fetch URLs ourselves.
   this.rpcGetUrl = function( callback ) {
     url = stack.pop()
-    forthparser.execute( [ "[", url, "get-http", "]", "@global", "rpc" ],
-      callback )
+
+    rpcExecute = new Execution();
+    rpcExecute.execute( [ "[", url, "get-http", "]",
+                          "@global", "rpc" ], callback );
   }
 
   // get-http                                      ( url get-http -- object )

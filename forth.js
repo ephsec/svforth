@@ -27,6 +27,17 @@ function executeCallback(callback)
   }
 }
 
+function Context(dictionary) {
+  this.stack = []
+  this.tokens = []
+  if( typeof dictionary != 'undefined' ) {
+    this.dictionary = Dictionary();
+  } else {
+    this.dictionary = dictionary;
+  }
+  this.dictionary = []
+
+}
 
 function Stack() {
   this.__stack = new Array();
@@ -522,7 +533,8 @@ function Execution()
         } else if ( typeof( word ) == 'string' ) {
           // We found a definition that only contains a string, so we need
           // to execute it as an input stream.
-          self.execute( word, self.nextToken, self.stackLabel );
+          newExecution = new Execution();
+          newExecution.execute( word, self.nextToken, self.stackLabel );
         } else {
           // The definition contained an array, so we insert this definition
           // into our current stream at the beginning.
@@ -678,6 +690,12 @@ function Execution()
       throw( "BEGIN loop without AGAIN.")
     }
   }
+
+  this.beginComment = function(callback) {
+    self.scanUntil( ")" );
+    executeCallback( callback )
+  }
+
 }
 
 // ***************************************************************************
@@ -686,6 +704,8 @@ function Execution()
 // ***************************************************************************
 
 function ExecutionBlock() {
+  self = this
+
   this.beginBlock = function(callback) {
     executionBlock = forthparser.scanUntil( "]" );
     if ( executionBlock != undefined ) {
@@ -781,14 +801,6 @@ function ExecutionBlock() {
 
 }
 
-function Comments() {
-  this.beginComment = function(callback) {
-    getContext = function() { forthparser.scanUntil( ")" ) }
-    getContext()
-    executeCallback( callback )
-  }
-}
-
 // ***************************************************************************
 // Instantiate the heart of our Forth system, the dictionary of Forth words
 // that contain the functions associated with these words, whether in
@@ -851,7 +863,6 @@ var jsonforth = new JsonForth();
 var display = new Display();
 var conditionals = new Conditionals();
 var debug = new Debug();
-var comments = new Comments();
 var forthparser = new Execution();
 var executionblock = new ExecutionBlock();
 var tokenCount = 0;
@@ -867,7 +878,8 @@ Word( "tokenresolution",
 Word( "begin",
       function (callback) { forthparser.begin( callback ) } )
 Word( "(",
-      function (callback) { comments.beginComment( callback ) } )
+      function (callback) { forthparser.beginComment( callback ) } )
+
 
 // If we have 'module', we export our class instances, as we're likely
 // Node.js.
