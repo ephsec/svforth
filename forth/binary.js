@@ -1,7 +1,7 @@
 // To allow ourselves to work in node.js if we're not a browser.
-if (typeof XMLHttpRequest == 'undefined') {
-  var XMLHttpRequest = require("xmlhttprequest").XMLHttpRequest;
-}
+//if (typeof XMLHttpRequest == 'undefined') {
+//  var XMLHttpRequest = require("xmlhttprequest").XMLHttpRequest;
+//}
 
 var Word = function( name, fn ) {
   dictionary.register( name, fn );  

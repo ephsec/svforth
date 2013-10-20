@@ -1,6 +1,6 @@
-if ( typeof XMLHttpRequest === undefined ) {
-  var XMLHttpRequest = require("xmlhttprequest").XMLHttpRequest;
-}
+//if ( typeof XMLHttpRequest === undefined ) {
+//  var XMLHttpRequest = require("xmlhttprequest").XMLHttpRequest;
+//}
 
 function URL() {
   this.localGetURL = function( callback ) {
@@ -21,6 +21,20 @@ function URL() {
     req.send()
   }
 
+  this.nodeGetURL = function( callback ) {
+    url = stack.pop()
+    var req = http.request(options, function(res) {
+      res.setEncoding('utf8');
+      res.on('data', function(data) {
+        stack.push( data );
+        executeCallback( callback );
+      });
+    });
+
+    req.end();
+
+  }
+
   // we have to do this remotely as Cross-Browser Origin Reference policies
   // do not let us fetch URLs ourselves.
   this.rpcGetUrl = function( callback ) {
@@ -37,7 +51,7 @@ function URL() {
   // word 'get-url' is associated with depending on if we're a browser
   // environment or a node.js environment.
   if ( typeof window === 'undefined' ) {
-    Word( "get-http", this.localGetUrl )
+    Word( "get-http", this.nodeGetUrl )
   } else {
     Word( "get-http", this.rpcGetUrl )
   }
