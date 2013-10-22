@@ -2,35 +2,20 @@ process.stdin.resume();
 process.stdin.setEncoding('utf8');
 
 var forth = require( '../forth.js' );
-var dsmodule = require('./ds.js');
-var rssmodule = require('./rss.js');
-var urlmodule = require('./url.js');
-var binarymodule = require('./binary.js');
 
-forthparser = forth.forthparser
-tokenize = forth.tokenize
-stack = forth.stack
-dictionary = forth.dictionary
-arithmetic = forth.arithmetic
-search = forth.search
-display = forth.display
+ExecutionContext = forth.ExecutionContext;
+Context = forth.Context;
+Dictionary = forth.Dictionary;
+initialDictionary = forth.initialDictionary;
 
-ds = dsmodule.ds;
-binary = binarymodule.binary;
+context = new Context(initialDictionary);
 
-var Word = function( name, fn ) {
-  dictionary.register( name, fn );  
-}
+console.log( context.dictionary );
 
-function executeCallback(callback)
-{
-  if( typeof callback != 'undefined' ) {
-    callback();
-  }
-}
 
 function parseInput(data) {
-    forthparser.execute(data);
+    execution = new ExecutionContext( context );
+    execution.execute(data);
     process.stdout.write(">> ");
 }
 
