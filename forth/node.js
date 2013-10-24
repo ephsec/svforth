@@ -3,19 +3,11 @@ process.stdin.setEncoding('utf8');
 
 var forth = require( '../forth.js' );
 
-ExecutionContext = forth.ExecutionContext;
-Context = forth.Context;
-Dictionary = forth.Dictionary;
-initialDictionary = forth.initialDictionary;
-
-context = new Context(initialDictionary);
-
-console.log( context.dictionary );
-
+initialContext = forth.createContext( { dictionary: forth.initialDictionary } );
+executionContext = forth.createExecutionContext.apply( initialContext );
 
 function parseInput(data) {
-    execution = new ExecutionContext( context );
-    execution.execute(data);
+    executionContext.execute(data);
     process.stdout.write(">> ");
 }
 

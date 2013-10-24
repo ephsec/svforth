@@ -1,6 +1,5 @@
 // Method to support various mechanisms to load a library depending on
 // environment.
-
 function importJSLibrary(library) {
   // If window is undefined, then it's probably a node.js instance which
   // imports using 'require'.
@@ -18,37 +17,16 @@ function importJSLibrary(library) {
 
 // We have a much more secure and sane way to deal with JSON parsing that
 // doesn't use eval().
-importJSLibrary('lib/json.js')
+importJSLibrary( 'lib/json.js' )
 
-function executeCallback( context )
-{
-  if( typeof contxt.callback != 'undefined' ) {
-    context.callback();
+// Make object creation in JavaScript much more sane by adding a create
+// function.
+if (typeof Object.create !== 'function') {
+  Object.create = function(o) {
+    var F = function() {};
+    F.prototype = o;
+    return new F();
   }
-}
-
-function Context(dictionary, stack, tokens) {
-  if( typeof dictionary !== 'undefined' ) {
-    this.dictionary = Dictionary();
-  } else {
-    this.dictionary = dictionary;
-  }
-
-  if( typeof stack !== 'undefined' ) {
-    this.stack = stack;
-  } else {
-    this.stack = [];
-  }
-
-  if( typeof tokens !== 'undefined' ) {
-    this.tokens = tokens;
-  } else {
-    this.tokens = [];
-  }
-
-  this.returnValue = undefined;
-  this.callback = undefined;
-
 }
 
 // Allows us to call Forth functions from JavaScript space, and to
@@ -70,49 +48,78 @@ function call(symbol, inputContext) {
   fn( context );
 }
 
-function Dictionary()
-{
-    this.__dictionary = new Object;
-    var self = this
+var createContext = function ( spec ) {
+  if ( typeof spec === 'undefined' ) { spec = {} };
+  if ( 'dictionary' in spec ) { var dictionary = spec.dictionary }
+    else { var dictionary = createDictionary() };
+  if ( 'stack' in spec ) { var stack = spec.stack }
+    else { var stack = [] };
+  if ( 'tokens' in spec ) { var tokens = spec.tokens }
+    else { var tokens = [] };
+  var returnValue = spec.returnValue;
+  var callback = spec.callback;
 
-    this.register = function( tokenString, fn ) {
-      self.__dictionary[ tokenString ] = fn;
+  context = {};
+
+  context.dictionary = dictionary
+  context.stack = stack
+  context.tokens = tokens
+  context.returnValue = returnValue
+  context.callback = callback
+
+  return( context );
+}
+
+var createDictionary = function( spec ) {
+  if ( typeof spec === 'undefined' ) { spec = {} };
+  if ( 'dictionary' in spec ) { var dictionary = spec.dictionary }
+    else { var dictionary = {} };
+  if ( 'forthWords' in spec ) { var forthWordSets = spec.forthWords }
+    else { var forthWordSets = [] };
+  if ( !( '__dictionary' in dictionary) ) { dictionary.__dictionary = {} };
+
+  dictionary.register = function( tokenString, fn ) {
+      this.__dictionary[ tokenString ] = fn;
     }
 
-    this.registerWords = function( functionDict ) {
-      for (var word in functionDict) {
-        self.register( word, functionDict[ word ] );
+  dictionary.registerWords = function( functionDict ) {
+    for (var word in functionDict) {
+        this.register( word, functionDict[ word ] );
       };
     }
 
-    this.remove = function( tokenString ) {
-      delete self__dictionary[ tokenString ];
+  dictionary.remove = function( tokenString ) {
+      delete this.__dictionary[ tokenString ];
     }
 
-    this.getWord = function( tokenString ) {
-      word = self.__dictionary[ tokenString ];
+  dictionary.getWord = function( tokenString ) {
+    word = this.__dictionary[ tokenString ];
 
-      // if we have a precompiled word, we return the tokens as a new array,
-      // to ensure that the original precompiled word isn't sliced away
-      if ( Object.prototype.toString.call( word ) === '[object Array]' ) {
-        return( word.slice(0) )
-      } else {
-        return self.__dictionary[ tokenString ];
-      }
+    // if we have a precompiled word, we return the tokens as a new array,
+    // to ensure that the original precompiled word isn't sliced away
+    if ( Object.prototype.toString.call( word ) === '[object Array]' ) {
+      return( word.slice(0) )
+    } else {
+      return this.__dictionary[ tokenString ];
     }
+  }
 
-    this.definitions = self.__dictionary;
+  dictionary.definitions = dictionary.__dictionary;
+
+  for ( var forthWordSet in forthWordSets ) {
+    dictionary.registerWords( forthWordSets[ forthWordSet ] );
+  }
+
+  return( dictionary );
+
 }
 
-function ExecutionContext(context)
-{
-  this.context = context
-
+var createExecutionContext = function (context) {
   this.execute = function(input) {
-    var context = this.context; 
+    var context = this;
 
     if ( typeof input === 'undefined' ) {
-      input = context.tokens
+      input = context.tokens;
     }
 
     // If we're a string, we split along a whitespace delimiter, for crude
@@ -129,10 +136,10 @@ function ExecutionContext(context)
       throw( "Invalid input to execution parser." )
     }
 
-    nextToken(context);
+    this.nextToken(context);
   }
 
-  function nextToken(context) {
+  this.nextToken = function(context) {
     // Nothing more to parse, so we're done and return.
     if ( context.tokens.length == 0 ) {
       return;
@@ -142,7 +149,7 @@ function ExecutionContext(context)
 
     // We move onto the next token by assigning the new token to currToken
     // and dropping it from the current token stream.
-    advanceRet = advanceToken( context );
+    advanceRet = this.advanceToken( context );
     currToken = advanceRet[0];
     context.tokens = advanceRet[1];
 
@@ -154,7 +161,7 @@ function ExecutionContext(context)
       } else if (currToken in context.dictionary.definitions) {
         // We're in the dictionary, so we do a lookup and retrieve the
         // definition.
-        word = dictionary.getWord( currToken );
+        word = context.dictionary.getWord( currToken );
         if ( typeof( word ) == 'function' ) {
           // We found a JavaScript function or closure stored in the definition,
           // so we execute it, with the callback to move onto the next token.
@@ -162,7 +169,7 @@ function ExecutionContext(context)
         } else if ( typeof( word ) == 'string' ) {
           // We found a definition that only contains a string, so we need
           // to execute it as an input stream.
-          newExecution = new Execution( context );
+          newExecution = createExecutionContext( createNewContext( context ) );
           newExecution.execute( word );
         } else {
           // The definition contained an array, so we insert this definition
@@ -198,11 +205,30 @@ function ExecutionContext(context)
     }
   }
 
-  function advanceToken(context) {
+  this.advanceToken = function(context) {
     retToken = context.tokens.splice(0, 1)[ 0 ]
     return( [ retToken, context.tokens ] );
   }
 
+  this.executeCallback = function(context) {
+    if( typeof context.callback != 'undefined' ) {
+      context.callback( context );
+    }
+  }
+
+  this.scanUntil = function(token, context) {
+    next = context.tokens.indexOf( token );
+    if ( next != -1 ) {
+      context.tokens.splice( next, 1 );
+      return( context.tokens.splice( 0, next ) );
+    } else {
+      // We don't fail here, but undefined should be handled by whoever
+      // called this as a failure, or to handle appropriately.
+      return( undefined );
+    }
+  }
+
+  return( this );
 
 }
 
@@ -211,13 +237,13 @@ StackFns = {
   // pop - ( a b c ) -> ( a b ), [ c ]
   'pop' : function(context) {
       context.returnValue = context.stack.pop();
-      executeCallback( context );
+      context.executeCallback( context );
     },
 
   // push - [ d ], ( a b c ) -> ( a b c d )
   'push' : function(item, context) {
       context.stack.push( item );
-      executeCallback( context );
+      context.executeCallback( context );
     },
 
   // clear stack
@@ -225,20 +251,20 @@ StackFns = {
       while (context.stack.length > 0) {
         context.stack.pop();
       }
-      executeCallback( context );
+      context.executeCallback( context );
     },
 
   // drop - ( a b c ) -> ( a b ), []
   'drop': function(context) {
       context.stack.pop();
-      executeCallback( context );
+      context.executeCallback( context );
     },
 
   // dup - ( a b c ) -> ( a b c c ), []
   'dup': function(context) {
       item = context.stack[ context.stack.length - 1 ];
       context.stack.push( item );
-      executeCallback( context );
+      context.executeCallback( context );
     },
 
   // swap - ( a b c ) -> ( a c b ), []
@@ -247,7 +273,7 @@ StackFns = {
       next = context.stack.pop();
       context.stack.push( top );
       context.stack.push( next );
-      executeCallback( context );
+      context.executeCallback( context );
     },
 
   // nip - ( a b c d ) ->  ( a b d )
@@ -255,7 +281,7 @@ StackFns = {
       top = context.stack.pop();
       context.stack.pop();
       context.stack.push( top );
-      executeCallback( context );
+      context.executeCallback( context );
     },
 
   // rot -- ( a b c d ) -> ( b c d a )
@@ -263,31 +289,31 @@ StackFns = {
       bottom = context.stack[0];
       context.stack.splice(0, 1);
       context.stack.push( bottom );
-      executeCallback( context );
+      context.executeCallback( context );
     },
 
   // min_rot -- ( a b c d ) -> ( d a b c )
   '-rot': function(context) {
       context.stack.splice( 0, 0, context.stack.pop() );
-      executeCallback( context );
+      context.executeCallback( context );
     },
 
   // push_many -- [ e f g ] ( a b c d ) -> ( a b c d e f g )
   'push_many': function(items, context) {
       context.stack = context.stack.concat( items )
-      executeCallback( context );
+      context.executeCallback( context );
     },
 
   '.s': function(context) {
       for (var s in context.stack) {
          console.log( s + ": " + JSON.stringify( context.stack[s] ) )
       }
-      executeCallback( context );
+      context.executeCallback( context );
     },
 
   'depth': function(context) {
       retval = context.stack.length;
-      executeCallback( context );
+      context.executeCallback( context );
     }
 }
 
@@ -296,166 +322,174 @@ DebugFns = {
       for ( var word in context.dictionary ) {
         context.stack.push( word );
       }
-      executeCallback( context );
+      context.executeCallback( context );
     }
 }
 
 ArithmeticFns = {
   '+': function(context) {
       context.stack.push( context.stack.pop() + context.stack.pop() );
-      executeCallback( context );
+      context.executeCallback( context );
     },
 
   '-': function(context) {
       first = context.stack.pop();
       second = context.stack.pop();
       context.stack.push( second - first );
-      executeCallback( context );
+      context.executeCallback( context );
     },
 
   '*': function(context) {
       context.stack.push( context.stack.pop() * context.stack.pop() );
-      executeCallback( context );
+      context.executeCallback( context );
     },
 
   '/': function(context) {
       first = context.stack.pop();
       second = context.stack.pop();
       context.stack.push( second / first );
-      executeCallback( context );
+      context.executeCallback( context );
     },
 
   'rand': function(context) {
-      stack.push( Math.floor( Math.random() * stack.pop() + stack.pop() ) );
-      executeCallback( context );
+      stack.push( Math.floor( Math.random() * context.stack.pop() + context.stack.pop() ) );
+      context.executeCallback( context );
     }
 }
 
-initialDictionary = new Dictionary();
-initialDictionary.registerWords( StackFns );
-initialDictionary.registerWords( ArithmeticFns );
-initialContext = new Context( initialDictionary );
+
+var conditional = function(result, context) {
+  if ( result ) {
+    context.stack.push( -1 );
+  } else {
+    context.stack.push( 0 );
+  }
+  context.executeCallback( context );
+}
+
+ConditionalFns = {
+  "=": function(context) {
+      conditional( context.stack.pop() == context.stack.pop(), context );
+    }, 
+  "<>": function(context) {
+      conditional( context.stack.pop() != context.stack.pop(), context );
+    },
+  "<": function(context) {
+      conditional( context.stack.pop() < context.stack.pop(), context );
+    },
+  ">": function(context) {
+      conditional( context.stack.pop() > context.stack.pop(), context );
+    },
+  "<=": function(context) {
+      conditional( context.stack.pop() <= context.stack.pop(), context );
+    },
+  ">=": function(context) {
+      conditional( context.stack.pop() >= context.stack.pop(), context );
+    },
+  "0=": function(context) {
+      conditional( context.stack.pop() == 0, context );
+    },
+  "0<>": function(context) {
+      conditional( context.stack.pop() != 0, context );
+    },
+  "0>=": function(context) {
+      conditional( context.stack.pop() < 0, context );
+    },
+    "0<=": function(context) {
+      conditional( context.stack.pop() > 0, context );
+    },
+  "true": function(context) {
+      stack.push( -1 );
+      context.executeCallback( context );
+    },
+  "false": function(context) {
+      stack.push( 0 );
+      context.executeCallback( context );
+    },
+  "between": function(context) {
+      num = context.stack.pop();
+      low = context.stack.pop();
+      high = context.stack.pop();
+      conditional( low <= num <= high, context );
+    },
+  "within": function(context) {
+      num = context.stack.pop();
+      low = context.stack.pop();
+      high = context.stack.pop();
+      conditional( low <= num < high, context );
+    },
+  "if": function(context) {
+      elseBlock = context.scanUntil( "else", context );
+      thenBlock = context.scanUntil( "then", context );
+
+      if ( thenBlock == undefined ) {
+        raise( "Syntax error: IF without THEN" );
+      } else if ( context.stack.pop() != 0 ) {
+        context.execute( thenBlock, context );
+      } else if ( typeof elseBlock != undefined ) {
+        context.execute( elseBlock, context );
+      }
+    }
+}
+
+initialDictionary = createDictionary(
+  { forthWords: [ StackFns,
+                  ArithmeticFns,
+                  ConditionalFns ] } );
+initialContext = createContext( { dictionary: initialDictionary } );
+executionContext = createExecutionContext.apply( initialContext );
+
 
 /* 
 function Conditionals() {
-  var conditional = function(result, callback) {
-    if ( result ) {
-      stack.push(-1)
-    } else {
-      stack.push(0)
-    }
-    executeCallback( context )
-  }
 
-  this.eq = function(context) {
-    conditional( stack.pop() == stack.pop(), callback )
-  }
+  this.lt = 
 
-  this.neq = function(context) {
-    conditional( stack.pop() != stack.pop(), callback )
-  }
+  this.gt = 
 
-  this.lt = function(context) {
-    conditional( stack.pop() < stack.pop(), callback )
-  }
+  this.lte = 
 
-  this.gt = function(context) {
-    conditional( stack.pop() > stack.pop(), callback )
-  }
+  this.gte = 
 
-  this.lte = function(context) {
-    conditional( stack.pop() <= stack.pop(), callback )
-  }
+  this.not = 
 
-  this.gte = function(context) {
-    conditional( stack.pop() >= stack.pop(), callback )
-  }
+  this.nonzero = 
 
-  this.not = function(context) {
-    conditional( stack.pop() == 0, callback )
-  }
+  this.ltz = 
 
-  this.nonzero = function(context) {
-    conditional( stack.pop() != 0, callback )
-  }
-
-  this.ltz = function(context) {
-    conditional( stack.pop() < 0, callback )
-  }
-
-  this.gtz = function(context) {
-    conditional( stack.pop() > 0, callback )
-  }
+  this.gtz = 
 
   this.ltez = function(context) {
-    conditional( stack.pop() <= 0, callback )
+    conditional( context.stack.pop() <= 0, callback )
   }
 
   this.gtez = function(context) {
-    conditional( stack.pop() >= 0, callback )
+    conditional( context.stack.pop() >= 0, callback )
   }
 
-  this.true = function(context) {
-    stack.push( -1 )
-    executeCallback( context )
-  }
+  this.true = 
 
   this.false = function(context) {
     stack.push( 0 )
     executeCallback( context )
   }
 
-  this.between = function(context) {
-    num = stack.pop()
-    low = stack.pop()
-    high = stack.pop()
-    conditional( low <= num <= high, callback )
-  }
+  this.between = 
 
-  this.within = function(context) {
-    num = stack.pop()
-    low = stack.pop()
-    high = stack.pop()
-    conditional( low <= num < high, callback )
-  }
+  this.within = 
 
-  this.ifthenelse = function(context) {
-    elseBlock = forthparser.scanUntil( "else" )
-    thenBlock = forthparser.scanUntil( "then" )
+  this.ifthenelse = 
 
-    if ( thenBlock == undefined ) {
-      raise( "Syntax error: IF without THEN" )
-    } else if ( stack.pop() != 0 ) {
-      forthparser.execute( thenBlock, callback )
-    } else if ( typeof elseBlock != undefined ) {
-      forthparser.execute( elseBlock, callback )
-    }
-  }
 
-  Word( "=", this.eq )
-  Word( "<>", this.neq )
-  Word( "<", this.lt )
-  Word( ">", this.gt )
-  Word( "<=", this.lte )
-  Word( ">=", this.gte )
-  Word( "0=", this.not )
-  Word( "0<>", this.nonzero )
-  Word( "0>=", this.ltez )
-  Word( "0<=", this.gtez )
-  Word( "true", this.true )
-  Word( "false", this.false )
-  Word( "between", this.between )
-  Word( "within", this.within )
-  Word( "if", this.ifthenelse )
 }
  
 function Search()
 {
   this.filter = function(context) {
-      filterTerm = stack.pop();
+      filterTerm = context.stack.pop();
       depth = stack.depth();
       for (var count=0; count < depth; count++) {
-          examine = stack.pop();
+          examine = context.stack.pop();
           if ('data' in examine) {
              if (examine.data.search(filterTerm) > 0) {
                 stack.push(examine);
@@ -463,7 +497,7 @@ function Search()
           }
           stack.rot();
       }
-      executeCallback( context );
+      context.executeCallback( context );
   }
 
   Word( "filter", this.filter );
@@ -472,11 +506,11 @@ function Search()
 
 function JsonForth() {
   this.jget = function(context) {
-      field = stack.pop();
-      artifact = stack.pop();
+      field = context.stack.pop();
+      artifact = context.stack.pop();
       stack.push( artifact );
       stack.push( artifact[ field ] );
-      executeCallback( context );
+      context.executeCallback( context );
   }
 
   Word( "jget", this.jget );
@@ -521,16 +555,16 @@ function DataStore() {
   }
 
   this.pull = function(context) {
-    limit = stack.pop();
-    artifactType = stack.pop();            
+    limit = context.stack.pop();
+    artifactType = context.stack.pop();            
     query = artifactType + " " + limit + " pull"
     datastore.remote( query )
-    executeCallback( context );
+    context.executeCallback( context );
   }
 
   this.clearserverstack = function(context) {
     datastore.remote( 'cls' );
-    executeCallback( context );      
+    context.executeCallback( context );      
   }
 
   Word( "get", this.get );
@@ -542,17 +576,6 @@ function DataStore() {
 }
 
 */
-
-// Whitespace delimited 'tokens', very brutally simple.
-function tokenize(data) {
-    return data.split(/\s+/)
-}
-
-function parser() {
-  this.execute = function(context) {
-
-  }
-}
 
 // **************************************************************************
 // The heart of our Forth, the execution parser; parser state is advanced in
@@ -569,7 +592,7 @@ function execute(context)
 
   // Set our token update resolution.
   this.updateresolution = function(context) {
-    self.tokenResolution = stack.pop()
+    self.tokenResolution = context.stack.pop()
     executeCallback( context )
   }
 
@@ -702,17 +725,7 @@ function execute(context)
 
   // Searches for the token in question, and returns the block between the
   // beginning and the token in question, removing it from the stream.
-  this.scanUntil = function(token) {
-    next = self.tokens.indexOf( token );
-    if ( next != -1 ) {
-      self.tokens.splice( next, 1 );
-      return( self.tokens.splice( 0, next ) );
-    } else {
-      // We don't fail here, but undefined should be handled by whoever
-      // called this as a failure, or to handle appropriately.
-      return( undefined );
-    }
-  }
+
 
   // This helper function inserts tokens at the beginning of the token stream.
   this.insertTokens = function(newtokens) {
@@ -865,8 +878,8 @@ function ExecutionBlock() {
   // asynchronously.  A coroutine itself runs synchronously, like the main
   // execution thread, however.
   this.coro = function(context) {
-    targetStack = stack.pop()
-    forthClosure = stack.pop()
+    targetStack = context.stack.pop()
+    forthClosure = context.stack.pop()
     var forthparser = new Execution()
     forthparser.execute( forthClosure, undefined, targetStack )
     // The above callout to forthparser.execute is non-blocking, so we
@@ -879,8 +892,8 @@ function ExecutionBlock() {
   // execute on our behalf.  We can also redirect the output of the stack
   // to a stack other than @global.
   this.rpc = function(context) {
-    stackToUse = stack.pop()
-    forthExecutionBlock = stack.pop()
+    stackToUse = context.stack.pop()
+    forthExecutionBlock = context.stack.pop()
 
     if ( stackToUse != undefined ) {
       if ( stackToUse in stacks ) {
@@ -1012,8 +1025,7 @@ Word( "(",
 // If we have 'module', we export our class instances, as we're likely
 // Node.js.
 if (typeof module != 'undefined' ) {
-  module.exports.ExecutionContext = ExecutionContext; 
-  module.exports.Context = Context;
-  module.exports.Dictionary = Dictionary;
+  module.exports.createExecutionContext = createExecutionContext; 
+  module.exports.createContext = createContext;
   module.exports.initialDictionary = initialDictionary;
 }
