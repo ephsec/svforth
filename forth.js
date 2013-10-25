@@ -114,8 +114,8 @@ var createDictionary = function( spec ) {
 
 }
 
-var createExecutionContext = function (context) {
-  this.execute = function(input) {
+var createExecutionContext = function( context ) {
+  this.execute = function( input ) {
     var context = this;
 
     if ( typeof input === 'undefined' ) {
@@ -139,11 +139,14 @@ var createExecutionContext = function (context) {
     this.nextToken(context);
   }
 
-  this.nextToken = function(context) {
+  this.nextToken = function( context ) {
     // Nothing more to parse, so we're done and return.
     if ( context.tokens.length == 0 ) {
       return;
     }
+
+    // console.log( "STACK:", context.stack );
+    // console.log( "TOKENS:", context.tokens );
 
     context.callback = this.nextToken;
 
@@ -197,7 +200,6 @@ var createExecutionContext = function (context) {
     } else if ( typeof( currToken ) == 'function' ) {
       // We're a closure, so invoke it directly.
       currToken( context );
-
     } else {
       // We're not a string or a function, so push ourself onto the stack.
       context.stack.push( currToken );
@@ -205,18 +207,18 @@ var createExecutionContext = function (context) {
     }
   }
 
-  this.advanceToken = function(context) {
+  this.advanceToken = function( context ) {
     retToken = context.tokens.splice(0, 1)[ 0 ]
     return( [ retToken, context.tokens ] );
   }
 
-  this.executeCallback = function(context) {
+  this.executeCallback = function( context ) {
     if( typeof context.callback != 'undefined' ) {
       context.callback( context );
     }
   }
 
-  this.scanUntil = function(token, context) {
+  this.scanUntil = function( token, context ) {
     next = context.tokens.indexOf( token );
     if ( next != -1 ) {
       context.tokens.splice( next, 1 );
@@ -228,14 +230,87 @@ var createExecutionContext = function (context) {
     }
   }
 
+  this.compile = function( tokens ) {
+    tokenIndex = 0;
+    while ( tokenIndex <= tokens.length-1 ) {
+      // We found a string in our token stream, so let's examine it.
+      if ( typeof( tokens[ tokenIndex ] ) == 'string' ) {
+        token = tokens[ tokenIndex ];
+        // We are a begin comment; we don't want comments in our compiled
+        // output, so we discard them.
+        if ( token == "(" ) {
+          tokens.splice( tokenIndex, tokens.indexOf( ")" ) - tokenIndex + 1 );
+        // We do a lookup in our dictionary for the token string.
+        } else if ( tokens[tokenIndex] in this.dictionary.definitions ) {
+          // We found it, so insert the definition directly into the token
+          // stream in place of the word.  This can be a JavaScript function,
+          // or it can be a compiled array of tokens obtained from a definition
+          // written in Forth.
+          tokens[tokenIndex] = this.dictionary.getWord( token );
+          tokenIndex += 1;
+        } else if ( tokens[tokenIndex] == "" ) {
+          // Null token to discard, caused by extra whitespaces.
+          tokens.splice( tokenIndex, 1 );
+        } else if ( !isNaN(tokens[tokenIndex]) ) {
+          // We're a number, but what kind?  We determine this by converting
+          // to an Integer or a Float -- if they're the same, it's an Integer,
+          // if they are different, it's a Float.
+          tokenInt = parseInt( tokens[ tokenIndex ] );
+          tokenFloat = parseFloat( tokens[ tokenIndex ] );
+          if ( tokenInt == tokenFloat ) {
+            tokens[ tokenIndex ] = tokenInt;
+          } else {
+            tokens[ tokenIndex ] = tokenFloat;
+          }
+          tokenIndex += 1;
+        } else {
+          // We were a string, but we're not anything, so we skip over this
+          // token untouched.
+          tokenIndex += 1;
+        }
+      } else {
+        // We're not a string, so this token is already compiled or a
+        // non-string object.
+        tokenIndex += 1;
+      }
+    }
+    return( tokens )
+  }
+
   return( this );
 
 }
 
+ForthFns = {
+  ":": function( context ) {
+    defineBlock = context.scanUntil( ";", context )
+
+    if ( defineBlock != undefined ) {
+      // Our new word to define and put in the Dictionary.
+      newWord = defineBlock[0];
+      // Our definition for the word is the rest of the statement up to ';'
+      definition = defineBlock.splice( 1, defineBlock.length );
+      // We compile our definition before storing it -- this speeds up
+      // execution by replacing strings with function references in the
+      // token array where appropriate.
+      definition = context.compile( definition );
+      // Actually define our word, just like JavaScript and Python does.
+      context.dictionary.register( newWord, definition )
+      context.executeCallback( context )
+    } else {
+      raise( "No terminating ';' found for word definition.")
+    } },
+
+  '(': function( context ) {
+    context.scanUntil( ")", context );
+    context.executeCallback( context )
+    }
+  }
+
 // Core stack functions in Forth
 StackFns = {
   // pop - ( a b c ) -> ( a b ), [ c ]
-  'pop' : function(context) {
+  'pop' : function( context ) {
       context.returnValue = context.stack.pop();
       context.executeCallback( context );
     },
@@ -247,7 +322,7 @@ StackFns = {
     },
 
   // clear stack
-  'cls': function(context) {
+  'cls': function( context ) {
       while (context.stack.length > 0) {
         context.stack.pop();
       }
@@ -255,20 +330,20 @@ StackFns = {
     },
 
   // drop - ( a b c ) -> ( a b ), []
-  'drop': function(context) {
+  'drop': function( context ) {
       context.stack.pop();
       context.executeCallback( context );
     },
 
   // dup - ( a b c ) -> ( a b c c ), []
-  'dup': function(context) {
+  'dup': function( context ) {
       item = context.stack[ context.stack.length - 1 ];
       context.stack.push( item );
       context.executeCallback( context );
     },
 
   // swap - ( a b c ) -> ( a c b ), []
-  'swap': function(context) {
+  'swap': function( context ) {
       top = context.stack.pop();
       next = context.stack.pop();
       context.stack.push( top );
@@ -277,7 +352,7 @@ StackFns = {
     },
 
   // nip - ( a b c d ) ->  ( a b d )
-  'nip': function(context) {
+  'nip': function( context ) {
       top = context.stack.pop();
       context.stack.pop();
       context.stack.push( top );
@@ -285,7 +360,7 @@ StackFns = {
     },
 
   // rot -- ( a b c d ) -> ( b c d a )
-  'rot': function(context) {
+  'rot': function( context ) {
       bottom = context.stack[0];
       context.stack.splice(0, 1);
       context.stack.push( bottom );
@@ -293,72 +368,73 @@ StackFns = {
     },
 
   // min_rot -- ( a b c d ) -> ( d a b c )
-  '-rot': function(context) {
+  '-rot': function( context ) {
       context.stack.splice( 0, 0, context.stack.pop() );
       context.executeCallback( context );
     },
 
   // push_many -- [ e f g ] ( a b c d ) -> ( a b c d e f g )
-  'push_many': function(items, context) {
+  'push_many': function( items, context ) {
       context.stack = context.stack.concat( items )
       context.executeCallback( context );
     },
 
-  '.s': function(context) {
+  '.s': function( context ) {
       for (var s in context.stack) {
          console.log( s + ": " + JSON.stringify( context.stack[s] ) )
       }
       context.executeCallback( context );
     },
 
-  'depth': function(context) {
+  'depth': function( context ) {
       retval = context.stack.length;
       context.executeCallback( context );
     }
-}
+  }
 
 DebugFns = {
-  'listwords': function(context) {
+  'listwords': function( context ) {
       for ( var word in context.dictionary ) {
         context.stack.push( word );
       }
       context.executeCallback( context );
     }
-}
+  }
 
 ArithmeticFns = {
-  '+': function(context) {
+  '+': function( context ) {
       context.stack.push( context.stack.pop() + context.stack.pop() );
       context.executeCallback( context );
     },
 
-  '-': function(context) {
+  '-': function( context ) {
       first = context.stack.pop();
       second = context.stack.pop();
       context.stack.push( second - first );
       context.executeCallback( context );
     },
 
-  '*': function(context) {
+  '*': function( context ) {
       context.stack.push( context.stack.pop() * context.stack.pop() );
       context.executeCallback( context );
     },
 
-  '/': function(context) {
+  '/': function( context ) {
       first = context.stack.pop();
       second = context.stack.pop();
       context.stack.push( second / first );
       context.executeCallback( context );
     },
 
-  'rand': function(context) {
-      stack.push( Math.floor( Math.random() * context.stack.pop() + context.stack.pop() ) );
+  'rand': function( context ) {
+      stack.push( Math.floor( Math.random() * context.stack.pop() +
+                              context.stack.pop() ) );
       context.executeCallback( context );
     }
-}
+  }
 
 
-var conditional = function(result, context) {
+var conditional = function( result, context ) {
   if ( result ) {
     context.stack.push( -1 );
   } else {
@@ -368,57 +444,57 @@ var conditional = function(result, context) {
 }
 
 ConditionalFns = {
-  "=": function(context) {
+  "=": function( context ) {
       conditional( context.stack.pop() == context.stack.pop(), context );
     }, 
-  "<>": function(context) {
+  "<>": function( context ) {
       conditional( context.stack.pop() != context.stack.pop(), context );
     },
-  "<": function(context) {
+  "<": function( context ) {
       conditional( context.stack.pop() < context.stack.pop(), context );
     },
-  ">": function(context) {
+  ">": function( context ) {
       conditional( context.stack.pop() > context.stack.pop(), context );
     },
-  "<=": function(context) {
+  "<=": function( context ) {
       conditional( context.stack.pop() <= context.stack.pop(), context );
     },
-  ">=": function(context) {
+  ">=": function( context ) {
       conditional( context.stack.pop() >= context.stack.pop(), context );
     },
-  "0=": function(context) {
+  "0=": function( context ) {
       conditional( context.stack.pop() == 0, context );
     },
-  "0<>": function(context) {
+  "0<>": function( context ) {
       conditional( context.stack.pop() != 0, context );
     },
-  "0>=": function(context) {
+  "0>=": function( context ) {
       conditional( context.stack.pop() < 0, context );
     },
-    "0<=": function(context) {
+    "0<=": function( context ) {
       conditional( context.stack.pop() > 0, context );
     },
-  "true": function(context) {
+  "true": function( context ) {
       stack.push( -1 );
       context.executeCallback( context );
     },
-  "false": function(context) {
+  "false": function( context ) {
       stack.push( 0 );
       context.executeCallback( context );
     },
-  "between": function(context) {
+  "between": function( context ) {
       num = context.stack.pop();
       low = context.stack.pop();
       high = context.stack.pop();
       conditional( low <= num <= high, context );
     },
-  "within": function(context) {
+  "within": function( context ) {
       num = context.stack.pop();
       low = context.stack.pop();
       high = context.stack.pop();
       conditional( low <= num < high, context );
     },
-  "if": function(context) {
+  "if": function( context ) {
       elseBlock = context.scanUntil( "else", context );
       thenBlock = context.scanUntil( "then", context );
 
@@ -430,152 +506,33 @@ ConditionalFns = {
         context.execute( elseBlock, context );
       }
     }
-}
-
-initialDictionary = createDictionary(
-  { forthWords: [ StackFns,
-                  ArithmeticFns,
-                  ConditionalFns ] } );
-initialContext = createContext( { dictionary: initialDictionary } );
-executionContext = createExecutionContext.apply( initialContext );
-
-
-/* 
-function Conditionals() {
-
-  this.lt = 
-
-  this.gt = 
-
-  this.lte = 
-
-  this.gte = 
-
-  this.not = 
-
-  this.nonzero = 
-
-  this.ltz = 
-
-  this.gtz = 
-
-  this.ltez = function(context) {
-    conditional( context.stack.pop() <= 0, callback )
   }
 
-  this.gtez = function(context) {
-    conditional( context.stack.pop() >= 0, callback )
-  }
+LoopFns = {
+    'begin': function( context ) {
+      againBlock = context.scanUntil( "again", context );
 
-  this.true = 
+      if ( againBlock != undefined ) {
+        block = context.compile( againBlock );
 
-  this.false = function(context) {
-    stack.push( 0 )
-    executeCallback( context )
-  }
-
-  this.between = 
-
-  this.within = 
-
-  this.ifthenelse = 
-
-
-}
- 
-function Search()
-{
-  this.filter = function(context) {
-      filterTerm = context.stack.pop();
-      depth = stack.depth();
-      for (var count=0; count < depth; count++) {
-          examine = context.stack.pop();
-          if ('data' in examine) {
-             if (examine.data.search(filterTerm) > 0) {
-                stack.push(examine);
-             }
-          }
-          stack.rot();
-      }
-      context.executeCallback( context );
-  }
-
-  Word( "filter", this.filter );
-
-}
-
-function JsonForth() {
-  this.jget = function(context) {
-      field = context.stack.pop();
-      artifact = context.stack.pop();
-      stack.push( artifact );
-      stack.push( artifact[ field ] );
-      context.executeCallback( context );
-  }
-
-  Word( "jget", this.jget );
-
-}
-
-function Display() {
-  this.show = function(context) {
-      for (count=0; count<stack.depth(); count++) {
-          artifact = stack.peek(count);
-          if ( artifact['atype']=='irc' ) {
-            irc = JSON.parse( artifact['data'] )
-            console.log( irc['ts'] + ": " + irc['data'] )
-          }
-      }
-  }
-
-  Word( "show", this.show );
-
-}
-
-function DataStore() {
-  this.remote = function(query, callback) {
-    function responseIntoStack() {
-      if (this.readyState == 4) {
-        response = jsonParse(myRequest.responseText)
-        for (var item in response) {
-            if ( "data" in response[item] ) {
-            response[item].data = jsonParse(response[item].data)
-            }
-          stack.push( response[item] )
+        while ( true ) {
+          context.execute( block );
         }
-        executeCallback( context )
+
+      } else {
+        throw( "BEGIN loop without AGAIN.");
       }
     }
-
-    var myRequest = new XMLHttpRequest()
-    myRequest.onload = responseIntoStack
-    myRequest.open("POST", "http://localhost:1339", true)
-    myRequest.setRequestHeader("Content-Type", "text/plain")
-    myRequest.send(query)
   }
 
-  this.pull = function(context) {
-    limit = context.stack.pop();
-    artifactType = context.stack.pop();            
-    query = artifactType + " " + limit + " pull"
-    datastore.remote( query )
-    context.executeCallback( context );
-  }
-
-  this.clearserverstack = function(context) {
-    datastore.remote( 'cls' );
-    context.executeCallback( context );      
-  }
-
-  Word( "get", this.get );
-  Word( "before", this.preceding_context );
-  Word( "after", this.following_context );
-  Word( "context", this.context );
-  Word( "pull", this.pull );
-  Word( "rcls", this.clearserverstack );      // rcls ( a b c -- )
-}
-
-*/
+initialDictionary = createDictionary(
+  { forthWords: [ ForthFns,
+                  StackFns,
+                  ArithmeticFns,
+                  ConditionalFns,
+                  LoopFns ] } );
+initialContext = createContext( { dictionary: initialDictionary } );
+executionContext = createExecutionContext.apply( initialContext );
 
 // **************************************************************************
 // The heart of our Forth, the execution parser; parser state is advanced in
@@ -586,12 +543,11 @@ function DataStore() {
 // **************************************************************************
 
 /*
-
 function execute(context)
 {
 
   // Set our token update resolution.
-  this.updateresolution = function(context) {
+  this.updateresolution = function( context ) {
     self.tokenResolution = context.stack.pop()
     executeCallback( context )
   }
@@ -655,77 +611,8 @@ function execute(context)
     }
   }
 
-  function parseNextToken() {
-    // Nothing more to parse, so we're done and return.
-    if ( self.tokens.length == 0 ) {
-      return;
-    }
-
-    // We move onto the next token by assigning the new token to currToken
-    // and dropping it from the current token stream.
-    advanceRet = advanceCursor();
-    currToken = advanceRet[0];
-    self.tokens = advanceRet[1];
-
-    // We're a string, so we need to evaluate it.
-    if ( typeof( currToken ) == 'string' ) {
-      // Null string due to extra whitespace, ignore it.
-      if ( currToken == "" ) {
-        self.nextToken();
-      } else if (currToken in dictionary.definitions) {
-        // We're in the dictionary, so we do a lookup and retrieve the
-        // definition.
-        word = dictionary.getWord( currToken );
-        if ( typeof( word ) == 'function' ) {
-          // We found a JavaScript function or closure stored in the definition,
-          // so we execute it, with the callback to move onto the next token.
-          word( self.nextToken );
-        } else if ( typeof( word ) == 'string' ) {
-          // We found a definition that only contains a string, so we need
-          // to execute it as an input stream.
-          newExecution = new Execution();
-          newExecution.execute( word, self.nextToken, self.stackLabel );
-        } else {
-          // The definition contained an array, so we insert this definition
-          // into our current stream at the beginning.
-          self.tokens = self.tokens.concat( word );
-          self.nextToken();
-        }
-      // Check if our token is a number so that we properly push it onto the
-      // stack as an int or a float.
-      } else if ( !isNaN(currToken) ) {
-          tokenInt = parseInt( currToken );
-          tokenFloat = parseFloat( currToken );
-          if ( tokenInt == tokenFloat ) {
-            stack.push( tokenInt, self.nextToken );
-          } else {
-            stack.push( tokenFloat, self.nextToken );
-          }
-      } else {
-        // We don't appear to be anything that we need to execute, so we 
-        // push ourself as a string onto the stack.
-        stack.push( currToken, self.nextToken );
-      }
-    } else if ( typeof( currToken ) == 'function' ) {
-      // We're a closure, so invoke it directly.
-      currToken( self.nextToken );
-
-    } else {
-      // We're not a string or a function, so push ourself onto the stack.
-      stack.push( currToken, self.nextToken );
-    }
-  }
-
-  // Move on to the next token, dropping the current token from the input
-  // stream.
-  function advanceCursor() {
-    retToken = self.tokens.splice(0, 1)[ 0 ]
-    return( [ retToken, self.tokens ] );
-  }
-
   // Searches for the token in question, and returns the block between the
   // beginning and the token in question, removing it from the stream.
-
 
   // This helper function inserts tokens at the beginning of the token stream.
   this.insertTokens = function(newtokens) {
@@ -740,52 +627,6 @@ function execute(context)
   // of strings where it matters, such as frequently called words.
   // **************************************************************************
 
-  this.compile = function(tokens) {
-    tokenIndex = 0;
-    while ( tokenIndex <= tokens.length-1 ) {
-      // We found a string in our token stream, so let's examine it.
-      if ( typeof( tokens[ tokenIndex ] ) == 'string' ) {
-        token = tokens[ tokenIndex ];
-        // We are a begin comment; we don't want comments in our compiled
-        // output, so we discard them.
-        if ( token == "(" ) {
-          tokens.splice( tokenIndex, tokens.indexOf( ")" ) - tokenIndex + 1 );
-        // We do a lookup in our dictionary for the token string.
-        } else if ( tokens[tokenIndex] in dictionary.definitions ) {
-          // We found it, so insert the definition directly into the token
-          // stream in place of the word.  This can be a JavaScript function,
-          // or it can be a compiled array of tokens obtained from a definition
-          // written in Forth.
-          tokens[tokenIndex] = dictionary.getWord( token );
-          tokenIndex += 1;
-        } else if ( tokens[tokenIndex] == "" ) {
-          // Null token to discard, caused by extra whitespaces.
-          tokens.splice( tokenIndex, 1 );
-        } else if ( !isNaN(tokens[tokenIndex]) ) {
-          // We're a number, but what kind?  We determine this by converting
-          // to an Integer or a Float -- if they're the same, it's an Integer,
-          // if they are different, it's a Float.
-          tokenInt = parseInt( tokens[ tokenIndex ] );
-          tokenFloat = parseFloat( tokens[ tokenIndex ] );
-          if ( tokenInt == tokenFloat ) {
-            tokens[ tokenIndex ] = tokenInt;
-          } else {
-            tokens[ tokenIndex ] = tokenFloat;
-          }
-          tokenIndex += 1;
-        } else {
-          // We were a string, but we're not anything, so we skip over this
-          // token untouched.
-          tokenIndex += 1;
-        }
-      } else {
-        // We're not a string, so this token is already compiled or a
-        // non-string object.
-        tokenIndex += 1;
-      }
-    }
-    return tokens
-  }
 
   // **************************************************************************
   // Core to being Forth is being able to define a new word or replace any word
@@ -793,50 +634,6 @@ function execute(context)
   // within the context of execution.  JavaScript and Python words can only
   // be defined in their respective contexts.
   // **************************************************************************
-
-  this.define = function (callback) {
-    defineBlock = self.scanUntil( ";" )
-
-    if ( defineBlock != undefined ) {
-      // Our new word to define and put in the Dictionary.
-      newWord = defineBlock[0];
-      // Our definition for the word is the rest of the statement up to ';'
-      definition = defineBlock.splice( 1, defineBlock.length );
-      // We compile our definition before storing it -- this speeds up
-      // execution by replacing strings with function references in the
-      // token array where appropriate.
-      definition = self.compile( definition );
-      // Actually define our word, just like JavaScript and Python does.
-      Word( newWord, definition )
-      executeCallback( callback )
-    } else {
-      raise( "No terminating ';' found for word definition.")
-    }
-  }
-
-  this.begin = function(context) {
-    againBlock = self.scanUntil( "again" )
-    if ( againBlock != undefined ) {
-      this.compile( againBlock )
-
-      function blockLoop( block ) {
-        forthparser.execute( block, function() { blockLoop( block ) },
-          self.stackLabel)
-      }
-
-      blockLoop( againBlock )
-
-    } else {
-      throw( "BEGIN loop without AGAIN.")
-    }
-  }
-
-  this.beginComment = function(context) {
-    self.scanUntil( ")" );
-    executeCallback( callback )
-  }
-
-}
 
 // ***************************************************************************
 // We support execution blocks as an object that is executable as a RPC, a
@@ -846,7 +643,7 @@ function execute(context)
 function ExecutionBlock() {
   self = this
 
-  this.beginBlock = function(context) {
+  this.beginBlock = function( context ) {
     executionBlock = forthparser.scanUntil( "]" );
     if ( executionBlock != undefined ) {
       // Do some typing of our AoT, particularly for numerics.  We don't
@@ -877,7 +674,7 @@ function ExecutionBlock() {
   // A Forth coroutine -- this is run in an independent execution context
   // asynchronously.  A coroutine itself runs synchronously, like the main
   // execution thread, however.
-  this.coro = function(context) {
+  this.coro = function( context ) {
     targetStack = context.stack.pop()
     forthClosure = context.stack.pop()
     var forthparser = new Execution()
@@ -891,7 +688,7 @@ function ExecutionBlock() {
   // A Forth RPC -- we can send a Forth execution block to a server to
   // execute on our behalf.  We can also redirect the output of the stack
   // to a stack other than @global.
-  this.rpc = function(context) {
+  this.rpc = function( context ) {
     stackToUse = context.stack.pop()
     forthExecutionBlock = context.stack.pop()
 
@@ -940,86 +737,6 @@ function ExecutionBlock() {
   Word( "rpc", this.rpc )
 
 }
-
-// ***************************************************************************
-// Instantiate the heart of our Forth system, the dictionary of Forth words
-// that contain the functions associated with these words, whether in
-// JavaScript or Forth.
-// ***************************************************************************
-
-var dictionary = new Dictionary();
-
-// Helper function to register a Word -- not neccessary, but makes the code
-// more readable and distinct.
-function Word( name, fn )
-{
-    dictionary.register( name, fn );
-}
-
-// ***************************************************************************
-// Inject our core stack operators into the Forth dictionary as closures.
-// ***************************************************************************
-
-// pop  ( a b c -- a b )
-Word( "pop",
-      function (callback) { stack.pop(callback) } );   
-Word( "push",
-      function (callback) { stack.push(callback) } ); 
-Word( "cls",
-      function (callback) { stack.clearstack(callback) } ); 
-Word( "dup",
-      function (callback) { stack.dup(callback) } );                        
-// drop ( a b c -- a b )
-Word( "drop",
-      function (callback) { stack.drop(callback) } );
-Word( "over",
-      function (callback) { stack.over(callback) } );
-// swap ( a b c -- a c b )
-Word( "swap",
-      function (callback) { stack.swap(callback) } );                      
-Word( "nip",
-      function (callback) { stack.nip(callback) } );
-Word( "tuck",
-      function (callback) { stack.tuck(callback) } );
-Word( "rot",
-      function (callback) { stack.rot(callback) } );
-Word( "-rot",
-      function (callback) { stack.min_rot(callback) } );
-Word( ".s",
-      function (callback) { stack.displaystack(callback) } );
-
-// ***************************************************************************
-// Now that our Dictionary and key operators are set up, initialize the rest
-// of the Forth environment.  This currently is a set of global variables,
-// which desperately needs to be refactored.
-// ***************************************************************************
-
-var stacks = { "@global": new Stack() };
-var stack = stacks[ "@global" ];
-var datastore = new DataStore();
-var arithmetic = new Arithmetic();
-var search = new Search();
-var jsonforth = new JsonForth();
-var display = new Display();
-var conditionals = new Conditionals();
-var debug = new Debug();
-var forthparser = new Execution();
-var executionblock = new ExecutionBlock();
-var tokenCount = 0;
-
-// Forth words that can only be used once our execution context is instantiated.
-
-Word("listwords",
-      function (callback) { debug.listwords( callback ) } )
-Word( ":",
-      function (callback) { forthparser.define( callback ) } )
-Word( "tokenresolution",
-      function (callback) { forthparser.updateresolution( callback ) } )
-Word( "begin",
-      function (callback) { forthparser.begin( callback ) } )
-Word( "(",
-      function (callback) { forthparser.beginComment( callback ) } )
-
 */
 
 // If we have 'module', we export our class instances, as we're likely
