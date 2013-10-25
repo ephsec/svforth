@@ -427,7 +427,7 @@ ArithmeticFns = {
     },
 
   'rand': function( context ) {
-      stack.push( Math.floor( Math.random() * context.stack.pop() +
+      context.stack.push( Math.floor( Math.random() * context.stack.pop() +
                               context.stack.pop() ) );
       context.executeCallback( context );
     }
