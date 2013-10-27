@@ -1,6 +1,6 @@
 function Canvas() {
-  var currCanvas = undefined
-  var currContext = undefined
+  this.currCanvas = undefined
+  this.currContext = undefined
 
   // ************************************************************************
   // Internal helper functions for our canvas routines
@@ -53,36 +53,38 @@ function Canvas() {
   // ***********************************************************************  
 
   // select our HTML canvas to draw on
-  this.canvas = function(callback) {
-    currCanvas = document.getElementById( stack.pop() )
-    currContext = currCanvas.getContext("2d")
-    executeCallback(callback)
+  this.canvas = function(context) {
+    this.currCanvas = document.getElementById( context.stack.pop() )
+    this.currContext = currCanvas.getContext("2d")
+    context.executeCallback( context )
   }
 
   // Set our fill color for shapes
-  this.fillStyle = function(callback) {
-    b = stack.pop()
-    g = stack.pop()
-    r = stack.pop()
-    currContext.fillStyle = "rgb(" + [r,g,b].join(",") + ")"
-    executeCallback(callback)
+  this.fillStyle = function(context) {
+    b = context.stack.pop()
+    g = context.stack.pop()
+    r = context.stack.pop()
+    this.currContext.fillStyle = "rgb(" + [r,g,b].join(",") + ")"
+    console.log( "COLOR SET TO:", r, g, b )
+    context.executeCallback( context )
   }
 
   // Draw a rectangle
-  this.fillRect = function(callback) {
-    y2 = stack.pop()
-    x2 = stack.pop()
-    y1 = stack.pop()
-    x1 = stack.pop()
-    currContext.fillRect(x1, y1, x2, y2)
-    executeCallback(callback)
+  this.fillRect = function(context) {
+    y2 = context.stack.pop()
+    x2 = context.stack.pop()
+    y1 = context.stack.pop()
+    x1 = context.stack.pop()
+    this.currContext.fillRect(x1, y1, x2, y2);
+    console.log( "FILL RECT CALLED", this.currContext );
+    context.executeCallback( context );
   }
 
   // Convert HSV float values into UInt RGB values
-  this.HSVtoRGB = function(callback) {
-      v = stack.pop();
-      s = stack.pop();
-      h = stack.pop();
+  this.HSVtoRGB = function(context) {
+      v = context.stack.pop();
+      s = context.stack.pop();
+      h = context.stack.pop();
 
       console.log(h, s, v);
 
@@ -103,19 +105,19 @@ function Canvas() {
           case 5: r = v, g = p, b = q; break;
       }
 
-      stack.push( Math.floor( r*255 ) );
-      stack.push( Math.floor( g*255 ) );
-      stack.push( Math.floor( b*255 ) );
+      context.stack.push( Math.floor( r*255 ) );
+      context.stack.push( Math.floor( g*255 ) );
+      context.stack.push( Math.floor( b*255 ) );
 
-      executeCallback( callback );
+      context.executeCallback( context );
   }
 
   // given three Strings or TypedArray, we draw them onto the current canvas
   // as RGB values
-  this.paintPlanes = function(callback) {
-    b = coerceByteArray( stack.pop() );
-    g = coerceByteArray( stack.pop() );
-    r = coerceByteArray( stack.pop() );
+  this.paintPlanes = function(context) {
+    b = coerceByteArray( context.stack.pop() );
+    g = coerceByteArray( context.stack.pop() );
+    r = coerceByteArray( context.stack.pop() );
 
     width = currCanvas.width;
     height = currCanvas.height;
@@ -139,61 +141,26 @@ function Canvas() {
         binIndex++;
     }
 
-    currContext.putImageData(imageData, 0, 0);
+    this.currContext.putImageData(imageData, 0, 0);
 
-    executeCallback(callback)
-
+    context.executeCallback(context);
   }
 
   // A wrapper function that takes a single object and duplicates it onto
   // the stack three times for callout to paint-rgb for a grayscale image.
-  this.paintBinary = function(callback) {
-    input = stack.pop();
+  this.paintBinary = function(context) {
+    input = context.stack.pop();
 
     // We push a *copy* of the input object, using slice() -- doing otherwise
     // yields some interesting side effects.
-    stack.push(input.slice(0));
-    stack.push(input.slice(0));
-    stack.push(input.slice(0));
+    context.stack.push(input.slice(0));
+    context.stack.push(input.slice(0));
+    context.stack.push(input.slice(0));
 
     // Directly call paint-rgb rather than injecting the object onto the 
     // Forth execution stack.
-    this.paintPlanes( callback );
+    this.paintPlanes( context );
   }
-
-  // ***********************************************************************
-  // Forth words for canvas operations below
-  // ***********************************************************************  
-
-  // paint-canvas                                              ( canvas -- )
-  //
-  // given canvas, pick the current HTML canvas
-  Word("set-canvas", this.canvas)
-
-  // fillcolor                                         ( red green blue -- )
-  //
-  // given red green and blue as UInt values, select a color
-  Word("set-fill-color", this.fillStyle)
-
-  // draw-rect                                            ( x1 y1 x2 y2 -- )
-  //
-  // given two sets of coordinates, draw a rectangle with the current color
-  Word("draw-rect", this.fillRect)
-
-  // paint-grayscale                                           ( object -- )
-  //
-  // given a Static Array or String, paint values as grayscale onto canvas
-  Word("paint-grayscale", this.paintBinary)
-
-  // paint-rgb                                   ( object object object -- )
-  //
-  // given three Static Array or Strings on the stack, paint values as RGB
-  Word("paint-rgb", this.paintPlanes)
-
-  // hsv-to-rgb                   ( hue saturation value -- red green blue )
-  //
-  // given hue, saturation, and value, produce red, green, and blue UInt
-  Word("hsv-to-rgb", this.HSVtoRGB)
 
   // If our HTML document has a 'canvas' element, we select it on
   // initialization to make things easier on us.
@@ -203,36 +170,42 @@ function Canvas() {
   }
 }
 
-// Helper definitions to make RGB colors easier
-Word("red", "127 0 0")
-Word("green", "0 127 0")
-Word("blue", "0 0 127")
+canvas = new Canvas();
 
+CanvasFns = {
+  "set-canvas": canvas.canvas,
+  "set-fill-color": canvas.fillStyle,
+  "draw-rect": canvas.fillRect,
+  "paint-grayscale": canvas.paintBinary,
+  "paint-rgb": canvas.paintPlanes,
+  "hsv-to-rgb": canvas.HSVtoRGB,
+  "red": "127 0 0",
+  "green": "0 127 0",
+  "blue": "0 0 127",
+  "cascade":
+    "canvas set-canvas                  ( initial setup ) \
+     blue set-fill-color                ( we like blue ) \
+     0                                  ( we begin with 0 on the stack ) \
+     begin \
+      dup dup dup dup                   ( 4x dup for x1 y1 x2 y2 coords ) \
+      .s \
+      100 + rot 100 +                   ( increment x2 and y2 by 100 for rect ) \
+      draw-rect                         ( draw our rectangle ) \
+      1 +                               ( our iterator value -- increment ) \
+      dup dup dup set-fill-color        ( duplicated three times for color set ) \
+     again",
+  "randrect":
+    "canvas set-canvas                  ( initial setup ) \
+     200 tokenresolution                ( allow browser update every 200 token ) \
+     begin \
+      0 255 rand 0 255 rand 0 255 rand  ( pick a random RGB value ) \
+      set-fill-color                    ( set our color to the RGB value above ) \
+      0 800 rand 0 600 rand             ( pick a corner of our rectangle ) \
+      0 800 rand 0 600 rand             ( pick another corner of our rectangle ) \
+      draw-rect                         ( actually draw our rectangle ) \
+     again"
+}
 
-
-// infinitely cascade squares filled with progressive colors
-Word("cascade", 
-  "canvas set-canvas                  ( initial setup ) \
-   blue set-fill-color                ( we like blue ) \
-   0                                  ( we begin with 0 on the stack ) \
-   begin \
-    dup dup dup dup                   ( 4x dup for x1 y1 x2 y2 coords ) \
-    100 + rot 100 +                   ( increment x2 and y2 by 100 for rect ) \
-    draw-rect                         ( draw our rectangle ) \
-    1 +                               ( our iterator value -- increment ) \
-    dup dup dup set-fill-color        ( duplicated three times for color set ) \
-   again")
-
-// infinitely draw random rectangles on our canvas filled with random colors
-Word("randrect",
-  "canvas set-canvas                  ( initial setup ) \
-   200 tokenresolution                ( allow browser update every 200 token ) \
-   begin \
-    0 255 rand 0 255 rand 0 255 rand  ( pick a random RGB value ) \
-    set-fill-color                    ( set our color to the RGB value above ) \
-    0 800 rand 0 600 rand             ( pick a corner of our rectangle ) \
-    0 800 rand 0 600 rand             ( pick another corner of our rectangle ) \
-    draw-rect                         ( actually draw our rectangle ) \
-   again")
-
-canvas = Canvas()
+if (typeof initialDictionary !== 'undefined') {
+  initialDictionary.registerWords( CanvasFns );
+}
