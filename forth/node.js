@@ -4,7 +4,7 @@ process.stdin.setEncoding('utf8');
 var forth = require( '../forth.js' );
 
 initialContext = forth.createContext( { dictionary: forth.initialDictionary } );
-executionContext = forth.createExecutionContext.apply( initialContext );
+executionContext = forth.applyExecutionContext.apply( initialContext );
 
 function parseInput(data) {
     executionContext.execute(data);
