@@ -140,6 +140,23 @@ var applyExecutionContext = function( context ) {
   }
 
   this.nextToken = function( context ) {
+    if ( typeof currTokenCount !== 'undefined' ) {
+      currTokenCount = currTokenCount + 1
+    } else {
+      currTokenCount = 1
+    }
+
+    if ( ( currTokenCount % 200 ) === 0 ) {
+      var nextCall = function() {
+          context.parseNextToken( context );
+        }
+      setTimeout( nextCall, 0 );
+    } else {
+      context.parseNextToken( context );
+    }
+  }
+
+  this.parseNextToken = function( context ) {
     // Nothing more to parse, so we're done and return.
     if ( context.tokens.length == 0 ) {
       return;
@@ -173,7 +190,7 @@ var applyExecutionContext = function( context ) {
           // We found a definition that only contains a string, so we need
           // to execute it as an input stream.
           newExecution = applyExecutionContext.apply(
-                          createNewContext( context ) );
+                          createContext( context ) );
           newExecution.execute( word );
         } else {
           // The definition contained an array, so we insert this definition
@@ -513,11 +530,8 @@ LoopFns = {
 
       if ( againBlock != undefined ) {
         block = context.compile( againBlock );
-
-        while ( true ) {
-          context.execute( block );
-        }
-
+        context.tokens = block.concat( [ "begin" ], block, [ "again" ] );
+        context.executeCallback( context );
       } else {
         throw( "BEGIN loop without AGAIN.");
       }
@@ -547,7 +561,6 @@ ExecutionFns = {
       // The executionBlock is pushed onto the stack as a distinct 
       // individual object.
       context.stack.push( executionBlock );
-      console.log( executionBlock );
       context.executeCallback( context );
     } else {
       throw( "No closing ']' found for execution block.")
@@ -611,6 +624,8 @@ ExecutionFns = {
     myRequest.send( JSON.stringify( forthExecutionBlock ) );
   }
 }
+
+currTokenCount = 0;
 
 initialDictionary = createDictionary(
   { forthWords: [ ForthFns,

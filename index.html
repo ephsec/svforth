@@ -7,18 +7,15 @@
 
 
 <body>
+  <div id='injection'></div>
   <script src='lib/Ractive.min.js'></script>
   <script src='forth.js'></script>
-  <script src='forth/ds.js'></script>
-  <script src='forth/url.js'></script>
-  <script src='forth/rss.js'></script>
-  <script src='forth/binary.js'></script>
+  <script src='forth/canvas.js'></script> 
 
-  <div id='injection'></div>
 
   <script>function takeInput()
   { forthInput = document.getElementById('forth-input')
-    forthparser.execute( forthInput.value )
+    executionContext.execute( forthInput.value )
     forthInput.value = ""
   }
   </script>
@@ -47,14 +44,12 @@
                       {{/stackitems}} \
                       </ul>",
              data: {
-                stackitems: stack.as_array
+                stackitems: executionContext.stack
             }});
           </script>
       </td>
     </tr>
   </table>
-
-  <script src='forth/canvas.js'></script> 
 
 </body>
 
