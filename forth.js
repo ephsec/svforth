@@ -567,7 +567,8 @@ ExecutionFns = {
     }
   },
 
-  // Execute Forth block, this is currently run synchronously.
+  // Execute Forth block, this is currently run asynchronously now that loops
+  // inject more tokens into the stream rather than execute a new context.
   '|': function( context ) {
     // targetStack = context.stack.pop()
     forthCoro = context.stack.pop();
@@ -603,7 +604,7 @@ ExecutionFns = {
       // scoping issues.
       return( function() {
         if (this.readyState == 4) {
-          // Anyone who uses the JSON parse that uses exec() is batshit insane.
+          // Anyone who uses a JSON parse fn that uses exec() is batshit insane.
           response = jsonParse( myRequest.responseText );
           for (var item in response) {
             context.stack.push( response[ item ] );
@@ -617,7 +618,7 @@ ExecutionFns = {
     // force this execution thread to wait until this completes.  The contents
     // of the execution block are sent to the server in JSON.
     var myRequest = new XMLHttpRequest();
-    myRequest.onload = responseIntoStack( context );
+    myRequest.onload = responseIntoContext( context );
     // responseIntoStack.targetStack = targetStack;
     myRequest.open( "POST", "", true );
     myRequest.setRequestHeader( "Content-Type", "text/plain" );
