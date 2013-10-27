@@ -48,7 +48,7 @@ function call(symbol, inputContext) {
   fn( context );
 }
 
-var createContext = function ( spec ) {
+var createContext = function( spec ) {
   if ( typeof spec === 'undefined' ) { spec = {} };
   if ( 'dictionary' in spec ) { var dictionary = spec.dictionary }
     else { var dictionary = createDictionary() };
@@ -114,7 +114,7 @@ var createDictionary = function( spec ) {
 
 }
 
-var createExecutionContext = function( context ) {
+var applyExecutionContext = function( context ) {
   this.execute = function( input ) {
     var context = this;
 
@@ -172,7 +172,8 @@ var createExecutionContext = function( context ) {
         } else if ( typeof( word ) == 'string' ) {
           // We found a definition that only contains a string, so we need
           // to execute it as an input stream.
-          newExecution = createExecutionContext( createNewContext( context ) );
+          newExecution = applyExecutionContext.apply(
+                          createNewContext( context ) );
           newExecution.execute( word );
         } else {
           // The definition contained an array, so we insert this definition
@@ -274,11 +275,9 @@ var createExecutionContext = function( context ) {
         tokenIndex += 1;
       }
     }
-    return( tokens )
+    return( tokens );
   }
-
   return( this );
-
 }
 
 ForthFns = {
@@ -305,7 +304,7 @@ ForthFns = {
     context.scanUntil( ")", context );
     context.executeCallback( context )
     }
-  }
+  };
 
 // Core stack functions in Forth
 StackFns = {
@@ -390,7 +389,7 @@ StackFns = {
       retval = context.stack.length;
       context.executeCallback( context );
     }
-  }
+  };
 
 DebugFns = {
   'listwords': function( context ) {
@@ -399,7 +398,7 @@ DebugFns = {
       }
       context.executeCallback( context );
     }
-  }
+  };
 
 ArithmeticFns = {
   '+': function( context ) {
@@ -431,7 +430,7 @@ ArithmeticFns = {
                               context.stack.pop() ) );
       context.executeCallback( context );
     }
-  }
+  };
 
 
 var conditional = function( result, context ) {
@@ -506,7 +505,7 @@ ConditionalFns = {
         context.execute( elseBlock, context );
       }
     }
-  }
+  };
 
 LoopFns = {
     'begin': function( context ) {
@@ -523,128 +522,11 @@ LoopFns = {
         throw( "BEGIN loop without AGAIN.");
       }
     }
-  }
+  };
 
-initialDictionary = createDictionary(
-  { forthWords: [ ForthFns,
-                  StackFns,
-                  ArithmeticFns,
-                  ConditionalFns,
-                  LoopFns ] } );
-initialContext = createContext( { dictionary: initialDictionary } );
-executionContext = createExecutionContext.apply( initialContext );
-
-// **************************************************************************
-// The heart of our Forth, the execution parser; parser state is advanced in
-// JavaScript by the use of callbacks when the function is completed.
-// New execution contexts are created by instantiating the Execution object
-// with a token stream or string, callback to invoke when done, and optionally
-// the stack to use for this particular execution context.
-// **************************************************************************
-
-/*
-function execute(context)
-{
-
-  // Set our token update resolution.
-  this.updateresolution = function( context ) {
-    self.tokenResolution = context.stack.pop()
-    executeCallback( context )
-  }
-
-  this.execute = function(input, callback, stackToUse) {
-    forthparser = this
-
-    // If we're a string, we split along a whitespace delimiter, for crude
-    // 'tokenization'.
-    if ( typeof( input ) == "string" ) {
-      self.tokens = input.split(/\s/)
-    // We were passed an array, so we want to make a copy of the array rather
-    // than operate directly on the array.  Operating on a definition would
-    // be very bad, and break us.
-    } else if ( typeof(input) == "object" ) {
-      self.tokens = input.slice(0)
-    } else {
-      // We don't know what the hell we were passed.
-      throw( "Invalid input to execution parser." )
-    }
-
-    // We support multiple stacks, and the stack operated on is an optional
-    // argument.
-    if ( stackToUse != undefined ) {
-      // We were passed a stack, so do the necessary setup here.
-      if ( stackToUse in stacks ) {
-        stack = stacks[ stackToUse ]
-      } else {
-        stack = new Stack()
-        stacks[ stackToUse ] = stack
-      }
-      self.stackLabel = stackToUse
-    } else {
-      // We default to the @global stack if no @stack was passed in.
-      stack = stacks[ "@global" ]
-      self.stackLabel = "@global"
-    }
-
-    // We were passed a callback, so to ensure that it gets executed,
-    // we inject it at the end of our token stream.
-    if ( typeof(callback) != "undefined" ) {
-      self.tokens.push( callback )
-    }
-
-    // Start the entire execution process.
-    self.nextToken()
-  }
-
-
-  // This hack is pretty important for browsers which would hang without
-  // the JavaScript execution loop yielding once in a while.  We have a 
-  // 'token resolution' parameter that is a tradeoff between SVFORTH
-  // performance and browser state updates.
-  this.nextToken = function() {
-    tokenCount += 1;
-
-    if ( ( tokenCount % self.tokenResolution ) != 0 ) {
-      parseNextToken();
-    } else {
-      setTimeout( function() { parseNextToken() }, 0 );
-    }
-  }
-
-  // Searches for the token in question, and returns the block between the
-  // beginning and the token in question, removing it from the stream.
-
-  // This helper function inserts tokens at the beginning of the token stream.
-  this.insertTokens = function(newtokens) {
-    self.tokens = newtokens.concat( self.tokens );
-  }
-
-  // **************************************************************************
-  // SVFORTH does not strictly need a 'compiler', as it is implemented in
-  // high level languages such as Python and JavaScript.  It could work
-  // directly on whitespace-delimited string input streams, but sometimes we
-  // want to replace these strings with actual anonymous functions in place
-  // of strings where it matters, such as frequently called words.
-  // **************************************************************************
-
-
-  // **************************************************************************
-  // Core to being Forth is being able to define a new word or replace any word
-  // in the Dictionary.  SVFORTH only supports defining words using Forth
-  // within the context of execution.  JavaScript and Python words can only
-  // be defined in their respective contexts.
-  // **************************************************************************
-
-// ***************************************************************************
-// We support execution blocks as an object that is executable as a RPC, a
-// coroutine, or a new blocking execution thread.
-// ***************************************************************************
-
-function ExecutionBlock() {
-  self = this
-
-  this.beginBlock = function( context ) {
-    executionBlock = forthparser.scanUntil( "]" );
+ExecutionFns = {
+  '[': function( context ) {
+    executionBlock = context.scanUntil( "]", context );
     if ( executionBlock != undefined ) {
       // Do some typing of our AoT, particularly for numerics.  We don't
       // want to compile these, as these in particular may be run in another
@@ -664,49 +546,46 @@ function ExecutionBlock() {
       }
       // The executionBlock is pushed onto the stack as a distinct 
       // individual object.
-      stack.push( executionBlock );
-      executeCallback( callback );
+      context.stack.push( executionBlock );
+      console.log( executionBlock );
+      context.executeCallback( context );
     } else {
       throw( "No closing ']' found for execution block.")
     }
-  }
+  },
 
-  // A Forth coroutine -- this is run in an independent execution context
-  // asynchronously.  A coroutine itself runs synchronously, like the main
-  // execution thread, however.
-  this.coro = function( context ) {
-    targetStack = context.stack.pop()
-    forthClosure = context.stack.pop()
-    var forthparser = new Execution()
-    forthparser.execute( forthClosure, undefined, targetStack )
-    // The above callout to forthparser.execute is non-blocking, so we
-    // go right to continuing our current execution thread by invoking
-    // the callback.
-    executeCallback( callback )
-  }
+  // Execute Forth block, this is currently run synchronously.
+  '|': function( context ) {
+    // targetStack = context.stack.pop()
+    forthCoro = context.stack.pop();
+
+    newContext = applyExecutionContext.apply( createContext( context ) );
+    newContext.execute( forthCoro );
+    context.executeCallback( context )
+  },
 
   // A Forth RPC -- we can send a Forth execution block to a server to
   // execute on our behalf.  We can also redirect the output of the stack
   // to a stack other than @global.
-  this.rpc = function( context ) {
-    stackToUse = context.stack.pop()
+  '#': function( context ) {
+    // stackToUse = context.stack.pop()
     forthExecutionBlock = context.stack.pop()
 
-    if ( stackToUse != undefined ) {
-      if ( stackToUse in stacks ) {
-        targetStack = stacks[ stackToUse ]
-      } else {
-        targetStack = new Stack()
-        stacks[ stackToUse ] = targetStack
-      }
-    } else {
-      stackToUse = stacks[ "@global" ]
-    }
+    // if ( stackToUse != undefined ) {
+    //  if ( stackToUse in stacks ) {
+    //    targetStack = stacks[ stackToUse ]
+    //  } else {
+    //    targetStack = new Stack()
+    //   stacks[ stackToUse ] = targetStack
+    //  }
+    // } else {
+    //  stackToUse = stacks[ "@global" ]
+    // }
 
     // We actually block the main execution thread until we complete getting
     // a response back.  Server responses are encoded in JSON, with an array
     // item for each stack item returned.
-    function responseIntoStack(targetStack, callback) {
+    function responseIntoContext(context) {
       // Here, we actually return a function that does the job, to work around
       // scoping issues.
       return( function() {
@@ -714,9 +593,9 @@ function ExecutionBlock() {
           // Anyone who uses the JSON parse that uses exec() is batshit insane.
           response = jsonParse( myRequest.responseText );
           for (var item in response) {
-            targetStack.push( response[ item ] );
+            context.stack.push( response[ item ] );
           }
-          executeCallback( callback );
+          context.executeCallback( callback );
         }
       } )
     }
@@ -725,24 +604,28 @@ function ExecutionBlock() {
     // force this execution thread to wait until this completes.  The contents
     // of the execution block are sent to the server in JSON.
     var myRequest = new XMLHttpRequest();
-    myRequest.onload = responseIntoStack( targetStack, callback );
-    responseIntoStack.targetStack = targetStack;
+    myRequest.onload = responseIntoStack( context );
+    // responseIntoStack.targetStack = targetStack;
     myRequest.open( "POST", "", true );
     myRequest.setRequestHeader( "Content-Type", "text/plain" );
     myRequest.send( JSON.stringify( forthExecutionBlock ) );
   }
-
-  Word( "[", this.beginBlock )
-  Word( "coro", this.coro )
-  Word( "rpc", this.rpc )
-
 }
-*/
+
+initialDictionary = createDictionary(
+  { forthWords: [ ForthFns,
+                  StackFns,
+                  ArithmeticFns,
+                  ConditionalFns,
+                  LoopFns,
+                  ExecutionFns ] } );
+initialContext = createContext( { dictionary: initialDictionary } );
+executionContext = applyExecutionContext.apply( initialContext );
 
 // If we have 'module', we export our class instances, as we're likely
 // Node.js.
 if (typeof module != 'undefined' ) {
-  module.exports.createExecutionContext = createExecutionContext; 
+  module.exports.applyExecutionContext = applyExecutionContext; 
   module.exports.createContext = createContext;
   module.exports.initialDictionary = initialDictionary;
 }
