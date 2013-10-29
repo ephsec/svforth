@@ -115,7 +115,7 @@ var createDictionary = function( spec ) {
 }
 
 var applyExecutionContext = function( context ) {
-  this.execute = function( input ) {
+  this.execute = function( input, returnContext ) {
     var context = this;
 
     if ( typeof input === 'undefined' ) {
@@ -129,12 +129,18 @@ var applyExecutionContext = function( context ) {
     // We were passed an array, so we want to make a copy of the array rather
     // than operate directly on the array.  Operating on a definition would
     // be very bad, and break us.
-    } else if ( typeof(input) == "object" ) {
+    } else if ( typeof( input ) == "object" ) {
       context.tokens = input.slice(0)
     } else {
       // We don't know what the hell we were passed.
       throw( "Invalid input to execution parser." )
     }
+
+    if ( typeof( returnContext ) !== 'undefined' ) {
+      context.returnContext = returnContext
+    }
+
+    console.log( "EXEC RETURN:", context.returnContext );
 
     this.nextToken(context);
   }
@@ -157,9 +163,17 @@ var applyExecutionContext = function( context ) {
   }
 
   this.parseNextToken = function( context ) {
+
     // Nothing more to parse, so we're done and return.
     if ( context.tokens.length == 0 ) {
-      return;
+      if ( typeof context.returnContext !== 'undefined' ) {
+        console.log( "RETURN CONTEXT CALLED")
+        returnContext = context.returnContext
+        context.executeCallback( returnContext );
+      } else {
+        context.callback = undefined;
+        return
+      }
     }
 
     // console.log( "STACK:", context.stack );
@@ -172,6 +186,8 @@ var applyExecutionContext = function( context ) {
     advanceRet = this.advanceToken( context );
     currToken = advanceRet[0];
     context.tokens = advanceRet[1];
+
+    console.log( "EXECUTING:", typeof( currToken ), currToken );
 
     // We're a string, so we need to evaluate it.
     if ( typeof( currToken ) == 'string' ) {
@@ -186,12 +202,17 @@ var applyExecutionContext = function( context ) {
           // We found a JavaScript function or closure stored in the definition,
           // so we execute it, with the callback to move onto the next token.
           word( context );
-        } else if ( typeof( word ) == 'string' ) {
+        } else if ( typeof( word ) === 'string' ) {
           // We found a definition that only contains a string, so we need
           // to execute it as an input stream.
+          // word = context.compile( word )
+          word = context.compile( word.split(/\s/) );
+          console.log( "COMPILED:", word );
           newExecution = applyExecutionContext.apply(
                           createContext( context ) );
-          newExecution.execute( word );
+          //context.tokens = context.tokens.concat( word );
+          // this.nextToken( context );
+          newExecution.execute( word, context );
         } else {
           // The definition contained an array, so we insert this definition
           // into our current stream at the beginning.
@@ -218,7 +239,7 @@ var applyExecutionContext = function( context ) {
     } else if ( typeof( currToken ) == 'function' ) {
       // We're a closure, so invoke it directly.
       currToken( context );
-    } else {
+    } else if ( typeof( currToken ) !== 'undefined' ) {
       // We're not a string or a function, so push ourself onto the stack.
       context.stack.push( currToken );
       this.nextToken( context );
@@ -617,6 +638,8 @@ ExecutionFns = {
     // Our RPC call is made via XMLHttpRequest asynchronously, though we
     // force this execution thread to wait until this completes.  The contents
     // of the execution block are sent to the server in JSON.
+    console.log( "CALLING RPC FOR:", forthExecutionBlock );
+
     var myRequest = new XMLHttpRequest();
     myRequest.onload = responseIntoContext( context );
     // responseIntoStack.targetStack = targetStack;
