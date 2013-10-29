@@ -136,3 +136,8 @@ BinaryFns = {
 if (typeof initialDictionary !== 'undefined') {
   initialDictionary.registerWords( BinaryFns );
 }
+
+// TODO: Commented out until this code works in node.js.
+// if (typeof module != 'undefined' ) {
+//  module.exports.BinaryFns = BinaryFns; 
+//}

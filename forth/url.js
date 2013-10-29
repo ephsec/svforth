@@ -1,65 +1,60 @@
-//if ( typeof XMLHttpRequest === undefined ) {
-//  var XMLHttpRequest = require("xmlhttprequest").XMLHttpRequest;
-//}
-
-function URL() {
-  this.localGetURL = function( callback ) {
+URLFns = {
+  "get-url": function( context ) {
     function responseIntoStack() {
       if (this.readyState == 4) {
-          stack.push( req.responseText );
+          context.stack.push( req.responseText );
       }
-      executeCallback(callback)
+      context.executeCallback( context );
     }
 
-    url = stack.pop()
+    url = context.stack.pop();
 
-    console.log( url )
-
-    var req = new XMLHttpRequest()
-    req.onload = responseIntoStack
-    req.open("GET", url, true)
-    req.send()
-  }
-
-  this.nodeGetURL = function( callback ) {
-    url = stack.pop()
-    var req = http.request(options, function(res) {
-      res.setEncoding('utf8');
-      res.on('data', function(data) {
-        stack.push( data );
-        executeCallback( callback );
-      });
-    });
-
-    req.end();
-
-  }
-
-  // we have to do this remotely as Cross-Browser Origin Reference policies
-  // do not let us fetch URLs ourselves.
-  this.rpcGetUrl = function( callback ) {
-    url = stack.pop()
-
-    rpcExecute = new Execution();
-    rpcExecute.execute( [ "[", url, "get-http", "]",
-                          "@global", "rpc" ], callback );
-  }
+    var req = new XMLHttpRequest();
+    req.onload = responseIntoStack;
+    req.open( "GET", url, true );
+    req.send();
+  },
 
   // get-http                                      ( url get-http -- object )
   //
   // This is where things get interesting -- we pick what function the Forth
   // word 'get-url' is associated with depending on if we're a browser
   // environment or a node.js environment.
-  if ( typeof window === 'undefined' ) {
-    Word( "get-http", this.nodeGetUrl )
-  } else {
-    Word( "get-http", this.rpcGetUrl )
-  }
+  // we have to do this remotely as Cross-Browser Origin Reference policies
+  // do not let us fetch URLs ourselves.
+  "get-http": function( context ) {
+    url = context.stack.pop();
 
+    context.execute( [ "[", url, "get-http", "]", "#" ] );
+  }
+}
+
+// If we're node.js, we redefine our 'get-http' call to one that works with
+// our environment which does not have XMLHttpRequest by default.
+if ( typeof window === 'undefined' ) {
+  var http = require('http');
+  URLFns[ 'get-http' ] = function( context ) {
+    url = context.stack.pop()
+    var req = http.request(url, function(res) {
+      var respBuffer = "";
+      res.setEncoding('utf8');
+      res.on('end', function() {
+        context.stack.push( respBuffer );
+        context.executeCallback( context );
+      });
+      res.on('data', function(data) {
+        console.log( data );
+        respBuffer += data;
+      });
+    });
+    req.end();
+  }
+};
+
+if (typeof initialDictionary !== 'undefined') {
+  initialDictionary.registerWords( URLFns );
 }
 
 if (typeof module != 'undefined' ) {
-  module.exports.url = URL;
-} else {
-  url = URL();
+  module.exports.URLFns = URLFns; 
 }
