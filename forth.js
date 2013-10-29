@@ -163,7 +163,7 @@ var applyExecutionContext = function( context ) {
     }
 
     // console.log( "STACK:", context.stack );
-    // console.log( "TOKENS:", context.tokens );
+    console.log( context.tokens );
 
     context.callback = this.nextToken;
 
@@ -609,7 +609,7 @@ ExecutionFns = {
           for (var item in response) {
             context.stack.push( response[ item ] );
           }
-          context.executeCallback( callback );
+          context.executeCallback( context );
         }
       } );
     }
