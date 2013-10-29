@@ -25,7 +25,13 @@ URLFns = {
   "get-http": function( context ) {
     url = context.stack.pop();
 
-    context.execute( [ "[", url, "get-http", "]", "#" ] );
+    // context.execute( [ "[", url, "get-http", "]", "#" ] );
+
+    context.tokens = context.tokens.concat( [ "[", url, "get-http", "]", "#" ] );
+    context.executeCallback( context );
+
+    //newContext = applyExecutionContext.apply( createContext( context ) );
+    //newContext.execute( , context );
   }
 }
 
