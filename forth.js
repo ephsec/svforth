@@ -517,9 +517,9 @@ ConditionalFns = {
       if ( thenBlock == undefined ) {
         raise( "Syntax error: IF without THEN" );
       } else if ( context.stack.pop() != 0 ) {
-        context.execute( thenBlock, context );
+        context.execute( thenBlock );
       } else if ( typeof elseBlock != undefined ) {
-        context.execute( elseBlock, context );
+        context.execute( elseBlock );
       }
     }
   };
@@ -575,7 +575,7 @@ ExecutionFns = {
 
     newContext = applyExecutionContext.apply( createContext( context ) );
     newContext.execute( forthCoro );
-    context.executeCallback( context )
+    context.executeCallback( context );
   },
 
   // A Forth RPC -- we can send a Forth execution block to a server to
@@ -583,7 +583,7 @@ ExecutionFns = {
   // to a stack other than @global.
   '#': function( context ) {
     // stackToUse = context.stack.pop()
-    forthExecutionBlock = context.stack.pop()
+    forthExecutionBlock = context.stack.pop();
 
     // if ( stackToUse != undefined ) {
     //  if ( stackToUse in stacks ) {
@@ -611,7 +611,7 @@ ExecutionFns = {
           }
           context.executeCallback( callback );
         }
-      } )
+      } );
     }
 
     // Our RPC call is made via XMLHttpRequest asynchronously, though we
