@@ -10,7 +10,6 @@ BinaryFns = {
 
     function responseIntoStack() {
       if (this.readyState == 4) {
-
         if ( typeof(binReq.response !== "undefined") ) {
           arrayBuffer = binReq.response;
           context.stack.push( arrayBuffer );
