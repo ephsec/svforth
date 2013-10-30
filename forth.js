@@ -140,7 +140,7 @@ var applyExecutionContext = function( context ) {
       context.returnContext = returnContext
     }
 
-    console.log( "EXEC RETURN:", context.returnContext );
+    // console.log( "EXEC RETURN:", context.returnContext );
 
     this.nextToken(context);
   }
@@ -177,7 +177,7 @@ var applyExecutionContext = function( context ) {
     }
 
     // console.log( "STACK:", context.stack );
-    console.log( context.tokens );
+    // console.log( context.tokens );
 
     context.callback = this.nextToken;
 
@@ -187,13 +187,13 @@ var applyExecutionContext = function( context ) {
     currToken = advanceRet[0];
     context.tokens = advanceRet[1];
 
-    console.log( "EXECUTING:", typeof( currToken ), currToken );
+    // console.log( "EXECUTING:", typeof( currToken ), currToken );
 
     // We're a string, so we need to evaluate it.
     if ( typeof( currToken ) == 'string' ) {
       // Null string due to extra whitespace, ignore it.
       if ( currToken == "" ) {
-        this.nextToken( context );
+        context.nextToken( context );
       } else if (currToken in context.dictionary.definitions) {
         // We're in the dictionary, so we do a lookup and retrieve the
         // definition.
@@ -205,19 +205,18 @@ var applyExecutionContext = function( context ) {
         } else if ( typeof( word ) === 'string' ) {
           // We found a definition that only contains a string, so we need
           // to execute it as an input stream.
-          // word = context.compile( word )
           word = context.compile( word.split(/\s/) );
-          console.log( "COMPILED:", word );
-          newExecution = applyExecutionContext.apply(
-                          createContext( context ) );
-          //context.tokens = context.tokens.concat( word );
-          // this.nextToken( context );
-          newExecution.execute( word, context );
+          context.tokens = word.concat( context.tokens );
+          context.nextToken( context );
         } else {
           // The definition contained an array, so we insert this definition
           // into our current stream at the beginning.
-          context.tokens = context.tokens.concat( word );
-          this.nextToken( context );
+
+          // We splice to copy the word to ensure that the original definition
+          // do not get tampered with.
+          copyWord = word.splice(0);
+          context.tokens = copyWord.concat( context.tokens );
+          context.nextToken( context );
         }
       // Check if our token is a number so that we properly push it onto the
       // stack as an int or a float.
@@ -229,12 +228,12 @@ var applyExecutionContext = function( context ) {
           } else {
             context.stack.push( tokenFloat );
           }
-          this.nextToken( context );
+          context.nextToken( context );
       } else {
         // We don't appear to be anything that we need to execute, so we 
         // push ourself as a string onto the stack.
         context.stack.push( currToken );
-        this.nextToken( context );
+        context.nextToken( context );
       }
     } else if ( typeof( currToken ) == 'function' ) {
       // We're a closure, so invoke it directly.
@@ -242,7 +241,7 @@ var applyExecutionContext = function( context ) {
     } else if ( typeof( currToken ) !== 'undefined' ) {
       // We're not a string or a function, so push ourself onto the stack.
       context.stack.push( currToken );
-      this.nextToken( context );
+      context.nextToken( context );
     }
   }
 
@@ -271,6 +270,7 @@ var applyExecutionContext = function( context ) {
 
   this.compile = function( tokens ) {
     tokenIndex = 0;
+
     while ( tokenIndex <= tokens.length-1 ) {
       // We found a string in our token stream, so let's examine it.
       if ( typeof( tokens[ tokenIndex ] ) == 'string' ) {
@@ -285,7 +285,14 @@ var applyExecutionContext = function( context ) {
           // stream in place of the word.  This can be a JavaScript function,
           // or it can be a compiled array of tokens obtained from a definition
           // written in Forth.
-          tokens[tokenIndex] = this.dictionary.getWord( token );
+          wordLookup = this.dictionary.getWord( token );
+          // If we're a string, we want to keep the string lookup rather than
+          // attempt to inject the string directly into the stream.
+          if ( typeof( wordLookup ) === 'function' ) {
+            tokens[ tokenIndex ] = wordLookup;
+          } else {
+            tokens[ tokenIndex ] = token;
+          }
           tokenIndex += 1;
         } else if ( tokens[tokenIndex] == "" ) {
           // Null token to discard, caused by extra whitespaces.
@@ -335,7 +342,7 @@ ForthFns = {
       context.dictionary.register( newWord, definition )
       context.executeCallback( context )
     } else {
-      raise( "No terminating ';' found for word definition.")
+      raise( "No terminating ';' found for word definition." );
     } },
 
   '(': function( context ) {
