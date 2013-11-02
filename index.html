@@ -18,7 +18,9 @@
 
   <script>function takeInput()
   { forthInput = document.getElementById('forth-input')
-    executionContext.execute( forthInput.value )
+    newContext = createContext( initialContext );
+    newExecutionContext = applyExecutionContext.apply( newContext );
+    newExecutionContext.execute( forthInput.value );
     forthInput.value = ""
   }
   </script>

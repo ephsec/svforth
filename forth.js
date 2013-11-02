@@ -152,7 +152,7 @@ var applyExecutionContext = function( context ) {
       currTokenCount = 1
     }
 
-    if ( ( currTokenCount % 200 ) === 0 ) {
+    if ( ( currTokenCount % tokenresolution ) === 0 ) {
       var nextCall = function() {
           context.parseNextToken( context );
         }
@@ -167,7 +167,6 @@ var applyExecutionContext = function( context ) {
     // Nothing more to parse, so we're done and return.
     if ( context.tokens.length == 0 ) {
       if ( typeof context.returnContext !== 'undefined' ) {
-        console.log( "RETURN CONTEXT CALLED")
         returnContext = context.returnContext
         context.executeCallback( returnContext );
       } else {
@@ -567,6 +566,11 @@ LoopFns = {
   };
 
 ExecutionFns = {
+  'tokenresolution': function( context ) {
+    tokenresolution = context.stack.pop();
+    context.executeCallback( context );
+  },
+
   '[': function( context ) {
     executionBlock = context.scanUntil( "]", context );
     if ( executionBlock != undefined ) {
@@ -645,7 +649,6 @@ ExecutionFns = {
     // Our RPC call is made via XMLHttpRequest asynchronously, though we
     // force this execution thread to wait until this completes.  The contents
     // of the execution block are sent to the server in JSON.
-    console.log( "CALLING RPC FOR:", forthExecutionBlock );
 
     var myRequest = new XMLHttpRequest();
     myRequest.onload = responseIntoContext( context );
@@ -657,6 +660,7 @@ ExecutionFns = {
 }
 
 currTokenCount = 0;
+tokenresolution = 200;
 
 initialDictionary = createDictionary(
   { forthWords: [ ForthFns,
