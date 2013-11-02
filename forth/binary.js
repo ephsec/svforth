@@ -32,10 +32,10 @@ BinaryFns = {
   },
 
   "get-binary-peinfo": function(context) {
-    this.ensureBase64();
     var binary = context.stack.pop();
     context.stack.push( [ binary, "get-binary-peinfo" ] );
-    context.execute( [ "rpc" ] );
+    context.tokens = [ '#' ].concat( context.tokens );
+    context.executeCallback( context );
   },
 
   "ensure-base64": function(context) {
@@ -93,7 +93,7 @@ BinaryFns = {
       if ( toBeBase64.hasOwnProperty('byteLength') ) {
         context.stack.push( ab2base64( toBeBase64 ) );
       } else {
-        context.stack.push( window.btoa( toConvert ) );
+        context.stack.push( window.btoa( toBeBase64 ) );
       }
     }
     context.executeCallback( context );
