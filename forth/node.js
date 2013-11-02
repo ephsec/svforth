@@ -2,35 +2,22 @@ process.stdin.resume();
 process.stdin.setEncoding('utf8');
 
 var forth = require( '../forth.js' );
-var dsmodule = require('./ds.js');
-var rssmodule = require('./rss.js');
-var urlmodule = require('./url.js');
-var binarymodule = require('./binary.js');
+var ds = require( './ds.js' );
+var url = require( './url.js' );
+var rss = require( './rss.js' );
 
-forthparser = forth.forthparser
-tokenize = forth.tokenize
-stack = forth.stack
-dictionary = forth.dictionary
-arithmetic = forth.arithmetic
-search = forth.search
-display = forth.display
+forth.initialDictionary.registerWords( ds.DataStructureFns );
+forth.initialDictionary.registerWords( url.URLFns );
+forth.initialDictionary.registerWords( rss.RSSFns );
 
-ds = dsmodule.ds;
-binary = binarymodule.binary;
+console.log( forth.initialDictionary.definitions );
 
-var Word = function( name, fn ) {
-  dictionary.register( name, fn );  
-}
+initialContext = forth.createContext( { dictionary: forth.initialDictionary } );
+executionContext = forth.applyExecutionContext.apply( initialContext );
 
-function executeCallback(callback)
-{
-  if( typeof callback != 'undefined' ) {
-    callback();
-  }
-}
 
 function parseInput(data) {
-    forthparser.execute(data);
+    executionContext.execute(data);
     process.stdout.write(">> ");
 }
 
