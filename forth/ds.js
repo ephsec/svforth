@@ -42,64 +42,27 @@ function xml2js(node) {
   return( data );
 }
 
-function DataStructure() {
-  // ***********************************************************************
-  // JavaScript functions for Forth words
-  // *********************************************************************** 
-
-  // convert a string containing XML into JavaScript data structure
-  this.xml2ds = function( callback ) {
-    xml = new DOMParser().parseFromString( stack.pop() );
-    ds = xml2js( xml.documentElement );
-    stack.push( ds );
-    executeCallback( callback );
-  }
-
-  // find how many elements are in our data structure
-  this.dsLength = function( callback ) {
-    item = stack.pop()
-    stack.push( item.length )
-    executeCallback( callback );
-  }
-
-  // get a subelement of our data structure
-  this.dsGet = function( callback ) {
-    index = stack.pop()
-    item = stack.pop()
-    stack.push( item[ index ] )
-    executeCallback( callback );
-  }
-
-  // iteratively go through subelement of an element, fetching the value
-  // contained in the key
-  this.dsGetAll = function( callback ) {
-    index = stack.pop();
-    item = stack.pop();
-    for (var i in item) {
-      try {
-        stack.push( item[i][index] );
-      }
-      catch(e) {
-        // If we don't find the index, we just skip this error.
-      }
-    }
-  }
-
-  // ***********************************************************************
-  // Forth words for data structure operations below
-  // ***********************************************************************
-
+DataStructureFns = {
   // xml-to-ds                                       ( xml-string -- js-ds )
   //
   // Given an XML string, convert it and push onto the stack a JavaScript
   // data structure representation.
-  Word( "xml-to-ds", this.xml2ds );
+  "xml-to-ds": function( context ) {
+    xml = new DOMParser().parseFromString( context.stack.pop(), 'text/xml' );
+    ds = xml2js( xml.documentElement );
+    context.stack.push( ds );
+    context.executeCallback( context );
+  },
 
   // ds-length                                           ( js-ds -- length )
   //
   // Given an DS, get the length of the element, whether it's an array, or
   // a string and push it onto the stack.
-  Word( "ds-length", this.dsLength );
+  "ds-length": function( context ) {
+    item = context.stack.pop()
+    context.stack.push( item.length )
+    context.executeCallback( context );
+  },
 
   // ds-get                                                ( js-ds -- item )
   //
@@ -109,7 +72,12 @@ function DataStructure() {
   //    [ 'a' 'b' ] 1 ds-get --> 'b'
   //    { a: 0, b: 1 } a ds-get --> 0
   //
-  Word( "ds-get", this.dsGet );
+  "ds-get": function( context ) {
+    index = context.stack.pop()
+    item = context.stack.pop()
+    context.stack.push( item[ index ] )
+    context.executeCallback( context );
+  },
 
   // ds-get-all                                 ( js-ds -- item0 item1 ... )
   //
@@ -120,12 +88,25 @@ function DataStructure() {
   //    [ { a: 0, b: 1 } { a: 1, b: 2 } { a: 'x', b: 3 } ] 'a' ds-get-all -->
   //        0 1 'x'
   //
-  Word( "ds-get-all", this.dsGetAll );
+  "ds-get-all": function( callback ) {
+    index = context.stack.pop();
+    item = context.stack.pop();
+    for (var i in item) {
+      try {
+        context.stack.push( item[i][index] );
+      }
+      catch(e) {
+        // If we don't find the index, we just skip this error.
+      }
+    }
+    context.executeCallback( context );
+  }
+}
 
+if (typeof initialDictionary !== 'undefined') {
+  initialDictionary.registerWords( DataStructureFns );
 }
 
 if (typeof module != 'undefined' ) {
-  module.exports.ds = DataStructure;
-} else {
-  ds = DataStructure();
+  module.exports.DataStructureFns = DataStructureFns; 
 }
