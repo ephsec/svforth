@@ -27,7 +27,7 @@ URLFns = {
 
     // context.execute( [ "[", url, "get-http", "]", "#" ] );
 
-    context.tokens = context.tokens.concat( [ "[", url, "get-http", "]", "#" ] );
+    context.tokens = [ [ url, "get-http" ], "#" ].concat( context.tokens );
     context.executeCallback( context );
 
     //newContext = applyExecutionContext.apply( createContext( context ) );
