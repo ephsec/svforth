@@ -37,7 +37,7 @@ function Canvas() {
   // length is the TypedArray, and if the TypedArray is larger, the canvas
   // is the maximum length.
   var getMaxLength = function(canv, plane) {
-    console.log( canv.width, canv.height, plane.byteLength );
+    // console.log( canv.width, canv.height, plane.byteLength );
     // We only draw up to the length of the binary, or the total
     // size of the canvas.
     if ( plane.byteLength > ( canv.width * canv.height ) ) {
@@ -65,7 +65,7 @@ function Canvas() {
     g = context.stack.pop()
     r = context.stack.pop()
     this.currContext.fillStyle = "rgb(" + [r,g,b].join(",") + ")"
-    console.log( "COLOR SET TO:", r, g, b )
+    // console.log( "COLOR SET TO:", r, g, b )
     context.executeCallback( context )
   }
 
@@ -76,7 +76,7 @@ function Canvas() {
     y1 = context.stack.pop()
     x1 = context.stack.pop()
     this.currContext.fillRect(x1, y1, x2, y2);
-    console.log( "FILL RECT CALLED", this.currContext );
+    // console.log( "FILL RECT CALLED", this.currContext );
     context.executeCallback( context );
   }
 
@@ -181,29 +181,7 @@ CanvasFns = {
   "hsv-to-rgb": canvas.HSVtoRGB,
   "red": "127 0 0",
   "green": "0 127 0",
-  "blue": "0 0 127",
-  "cascade":
-    "canvas set-canvas                  ( initial setup ) \
-     blue set-fill-color                ( we like blue ) \
-     0                                  ( we begin with 0 on the stack ) \
-     begin \
-      dup dup dup dup                   ( 4x dup for x1 y1 x2 y2 coords ) \
-      .s \
-      100 + rot 100 +                   ( increment x2 and y2 by 100 for rect ) \
-      draw-rect                         ( draw our rectangle ) \
-      1 +                               ( our iterator value -- increment ) \
-      dup dup dup set-fill-color        ( duplicated three times for color set ) \
-     again",
-  "randrect":
-    "canvas set-canvas                  ( initial setup ) \
-     200 tokenresolution                ( allow browser update every 200 token ) \
-     begin \
-      0 255 rand 0 255 rand 0 255 rand  ( pick a random RGB value ) \
-      set-fill-color                    ( set our color to the RGB value above ) \
-      0 800 rand 0 600 rand             ( pick a corner of our rectangle ) \
-      0 800 rand 0 600 rand             ( pick another corner of our rectangle ) \
-      draw-rect                         ( actually draw our rectangle ) \
-     again"
+  "blue": "0 0 127"
 }
 
 if (typeof initialDictionary !== 'undefined') {

@@ -58,7 +58,6 @@ BinaryFns = {
           47
         :
           65;
-
     }
 
     function ab2base64(ba) {

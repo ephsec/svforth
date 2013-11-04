@@ -29,6 +29,33 @@ if (typeof Object.create !== 'function') {
   }
 }
 
+// Various methods to obtain a file and put it onto the stack, depending on the
+// JavaScript environment.
+if ( typeof window === 'undefined' ) {
+  fs = require( 'fs' );
+  var getFile = function( path, context, loadCallback ) {
+    fs.readFile( path, function ( err, data ) {
+      if (err) throw err;
+      context.stack.push( data );
+      loadCallback();
+    } );
+  }
+} else {
+  var getFile = function( path, context, loadCallback ) {
+    function responseIntoStack() {
+      if (this.readyState == 4) {
+        context.stack.push( req.responseText );
+        loadCallback();
+      }
+    }
+
+    var req = new XMLHttpRequest();
+    req.onload = responseIntoStack;
+    req.open( "GET", path, true );
+    req.send();
+  }
+}
+
 // Allows us to call Forth functions from JavaScript space, and to
 // bind Forth functions from JavaScript.
 function call(symbol, inputContext) {
@@ -368,6 +395,18 @@ var applyExecutionContext = function( context ) {
     return( tokens );
   }
 
+  // Load a Forth file into our current execution context.
+  this.load = function( path ) {
+    context = this;
+    loadCallback = function() {
+      fileContents = context.stack.pop();
+      tokenizedContents = fileContents.split( /\s/ );
+      context.tokens = tokenizedContents.concat( context.tokens );
+      context.nextToken( context );
+    }
+    getFile( path, context, loadCallback );
+  }
+
   // We return our context object enhanced with our execution functions.
   return( this );
 }
@@ -397,7 +436,13 @@ ForthFns = {
   '(': function( context ) {
     context.scanUntil( ")", context );
     context.executeCallback( context );
-    }
+    },
+
+  // Forth loader exposed into Forth space.
+  'load-forth': function( context ) {
+    path = context.stack.pop( context );
+    context.load( path );
+    },
   };
 
 // Core stack functions in Forth
