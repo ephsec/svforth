@@ -4,7 +4,7 @@
   0                                   ( we begin with 0 on the stack )
   begin
     dup dup dup dup                   ( 4x dup for x1 y1 x2 y2 coords )
-    .s \
+    .s
     100 + rot 100 +                   ( increment x2 and y2 by 100 for rect )
     draw-rect                         ( draw our rectangle )
     1 +                               ( our iterator value -- increment )

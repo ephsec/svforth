@@ -36,7 +36,7 @@ if ( typeof window === 'undefined' ) {
   var getFile = function( path, context, loadCallback ) {
     fs.readFile( path, function ( err, data ) {
       if (err) throw err;
-      context.stack.push( data );
+      context.stack.push( new String( data ) );
       loadCallback();
     } );
   }
@@ -400,7 +400,7 @@ var applyExecutionContext = function( context ) {
     context = this;
     loadCallback = function() {
       fileContents = context.stack.pop();
-      tokenizedContents = fileContents.split( /\s/ );
+      tokenizedContents = fileContents.split(/\s/);
       context.tokens = tokenizedContents.concat( context.tokens );
       context.nextToken( context );
     }
