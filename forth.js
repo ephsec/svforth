@@ -48,6 +48,15 @@ function call(symbol, inputContext) {
   fn( context );
 }
 
+// Our context object contains the current context, with the dictionary, tokens,
+// and stack state.  We can have multiple contexts running, sharing any or none
+// of the states between contexts.
+//
+// For example, we can have separate contexts that share the same stack, and
+// have different token states for an implementation of coroutines.
+//
+// Our spec can be another context object, if we want to clone it and then
+// replace some or all of the elements of the context.
 var createContext = function( spec ) {
   if ( typeof spec === 'undefined' ) { spec = {} };
   if ( 'dictionary' in spec ) { var dictionary = spec.dictionary }
@@ -70,81 +79,106 @@ var createContext = function( spec ) {
   return( context );
 }
 
+// Our Dictionary object creator function.
 var createDictionary = function( spec ) {
   if ( typeof spec === 'undefined' ) { spec = {} };
   if ( 'dictionary' in spec ) { var dictionary = spec.dictionary }
     else { var dictionary = {} };
+  // Sets of dictionaries containing Forth words to integrate into this
+  // dictionary.
   if ( 'forthWords' in spec ) { var forthWordSets = spec.forthWords }
     else { var forthWordSets = [] };
-  if ( !( '__dictionary' in dictionary) ) { dictionary.__dictionary = {} };
+  // if we were passed definitions, because we were passed a dictionary
+  // as a spec object rather than a spec, we set this accordingly.
+  if ( 'definitions' in spec ) { dictionary.definitions = spec.definitions };
+  // we still don't have a definitions, so we set an empty definitions.
+  if ( !( 'definitions' in dictionary) ) { dictionary.definitions = {} };
 
+  // Add a new word to our dictionary.
   dictionary.register = function( tokenString, fn ) {
-      this.__dictionary[ tokenString ] = fn;
+      this.definitions[ tokenString ] = fn;
     }
 
+  // Given a JS dictionary, register all the words in it onto ourself.
   dictionary.registerWords = function( functionDict ) {
     for (var word in functionDict) {
         this.register( word, functionDict[ word ] );
       };
     }
 
+  // Remove our dictionary definition.
   dictionary.remove = function( tokenString ) {
-      delete this.__dictionary[ tokenString ];
+      delete( this.definitions[ tokenString ] );
     }
 
+  // The heart of soul, definition retrieval from our dictionary.
   dictionary.getWord = function( tokenString ) {
-    word = this.__dictionary[ tokenString ];
+    word = this.definitions[ tokenString ];
 
     // if we have a precompiled word, we return the tokens as a new array,
     // to ensure that the original precompiled word isn't sliced away
     if ( Object.prototype.toString.call( word ) === '[object Array]' ) {
-      return( word.slice(0) )
+      return( word.slice(0) );
     } else {
-      return this.__dictionary[ tokenString ];
-    }
+      return( word );
+    };
   }
 
-  dictionary.definitions = dictionary.__dictionary;
-
+  // Now that we've defined our dictionary methods, we recurse through the
+  // word sets provided as part of the specs and register them.
   for ( var forthWordSet in forthWordSets ) {
     dictionary.registerWords( forthWordSets[ forthWordSet ] );
   }
 
+  // Finally, our new dictionary object.
   return( dictionary );
 
 }
 
+// Our Forth parser and execution routines; given a context object, we add
+// the execution and parser routines to this.  In a future refactor, this
+// should be functions used with apply() rather than being re-passed context
+// to itself.
 var applyExecutionContext = function( context ) {
   this.execute = function( input, returnContext ) {
+    // This is the only function that doesn't take context as an argument,
+    // instead leveraging the fact that we're a context object ourself; this
+    // segues into apply() very well.
     var context = this;
 
     if ( typeof input === 'undefined' ) {
+      // We were not passed any input to execute, so we execute the tokens that
+      // are already set in the current context.
       input = context.tokens;
     }
 
-    // If we're a string, we split along a whitespace delimiter, for crude
-    // 'tokenization'.
     if ( typeof( input ) == "string" ) {
-      context.tokens = input.split(/\s/)
-    // We were passed an array, so we want to make a copy of the array rather
-    // than operate directly on the array.  Operating on a definition would
-    // be very bad, and break us.
+      // If we're a string, we split along a whitespace delimiter, for crude
+      // 'tokenization'.
+      context.tokens = input.split( /\s/ );
     } else if ( typeof( input ) == "object" ) {
-      context.tokens = input.slice(0)
+      // We were passed an array, so we want to make a copy of the array rather
+      // than operate directly on the array.  Operating on a definition would
+      // be very bad, and break us.
+      context.tokens = input.slice(0);
     } else {
       // We don't know what the hell we were passed.
-      throw( "Invalid input to execution parser." )
+      throw( "Invalid input to execution parser." );
     }
 
+    // If we reach the end of execution of this context, we can return to a
+    // different context.
     if ( typeof( returnContext ) !== 'undefined' ) {
-      context.returnContext = returnContext
+      context.returnContext = returnContext;
     }
 
-    // console.log( "EXEC RETURN:", context.returnContext );
-
-    this.nextToken(context);
+    // Kick off our execution parser on our current context.
+    context.nextToken( context );
   }
 
+  // Advance to the next token in our input stream.  This is really a wrapper
+  // for parseNextToken which is a counter, and calls out to setTimeout() 
+  // as appropriate to allow the browser to actually breathe.
   this.nextToken = function( context ) {
     if ( typeof currTokenCount !== 'undefined' ) {
       currTokenCount = currTokenCount + 1
@@ -153,40 +187,41 @@ var applyExecutionContext = function( context ) {
     }
 
     if ( ( currTokenCount % tokenresolution ) === 0 ) {
+      // We've hit our speedbump, so call setTimeout.
       var nextCall = function() {
           context.parseNextToken( context );
         }
       setTimeout( nextCall, 0 );
     } else {
+      // Full speed ahead.
       context.parseNextToken( context );
     }
   }
 
   this.parseNextToken = function( context ) {
-
     // Nothing more to parse, so we're done and return.
     if ( context.tokens.length == 0 ) {
       if ( typeof context.returnContext !== 'undefined' ) {
-        returnContext = context.returnContext
+        // We have another context to return to, so we execute the callback
+        // on the old context to return control to it.
+        returnContext = context.returnContext;
         context.executeCallback( returnContext );
       } else {
+        // Ensure that we're not called again, ending the token execution
+        // loop.
         context.callback = undefined;
-        return
+        return;
       }
     }
 
-    // console.log( "STACK:", context.stack );
-    // console.log( context.tokens );
-
+    // Before we do anything, set our callback on the current context to 
+    // advance to the next token.  All Forth functions should be calling the
+    // callback to complete, allowing the parser state to advance.
     context.callback = this.nextToken;
 
     // We move onto the next token by assigning the new token to currToken
     // and dropping it from the current token stream.
-    advanceRet = this.advanceToken( context );
-    currToken = advanceRet[0];
-    context.tokens = advanceRet[1];
-
-    // console.log( "EXECUTING:", typeof( currToken ), currToken );
+    currToken = this.advanceToken( context );
 
     // We're a string, so we need to evaluate it.
     if ( typeof( currToken ) == 'string' ) {
@@ -244,11 +279,15 @@ var applyExecutionContext = function( context ) {
     }
   }
 
+  // Advance to the next token, discarding it from the input stream and 
+  // returning it.
   this.advanceToken = function( context ) {
-    retToken = context.tokens.splice(0, 1)[ 0 ]
-    return( [ retToken, context.tokens ] );
+    return( context.tokens.splice(0, 1)[ 0 ] );
   }
 
+  // We are called at the end of every Forth function; this is usually
+  // a callback to advance to the next token state, but can be a different
+  // function or closure as needed.
   this.executeCallback = function( context ) {
     if( typeof context.callback != 'undefined' ) {
       context.callback( context );
@@ -269,6 +308,11 @@ var applyExecutionContext = function( context ) {
 
   this.compile = function( tokens ) {
     tokenIndex = 0;
+
+    // Check if we've been compiled in the past.
+    if ( 'compiled' in tokens ) {
+      return( tokens );
+    }
 
     while ( tokenIndex <= tokens.length-1 ) {
       // We found a string in our token stream, so let's examine it.
@@ -319,12 +363,17 @@ var applyExecutionContext = function( context ) {
         tokenIndex += 1;
       }
     }
+    // Set our compiled flag to true, so that we don't attempt to recompile.
+    tokens.compiled = true;
     return( tokens );
   }
+
+  // We return our context object enhanced with our execution functions.
   return( this );
 }
 
 ForthFns = {
+  // : word ... ; -- our Forth word definitions.
   ":": function( context ) {
     defineBlock = context.scanUntil( ";", context )
 
@@ -344,9 +393,10 @@ ForthFns = {
       raise( "No terminating ';' found for word definition." );
     } },
 
+  // Comments.
   '(': function( context ) {
     context.scanUntil( ")", context );
-    context.executeCallback( context )
+    context.executeCallback( context );
     }
   };
 
@@ -422,6 +472,7 @@ StackFns = {
       context.executeCallback( context );
     },
 
+  // Output our stack onto the console.
   '.s': function( context ) {
       for (var s in context.stack) {
          console.log( s + ": " + JSON.stringify( context.stack[s] ) )
@@ -429,8 +480,10 @@ StackFns = {
       context.executeCallback( context );
     },
 
+  // Report on our current stack depth.
   'depth': function( context ) {
       retval = context.stack.length;
+      context.stack.push( retval );
       context.executeCallback( context );
     }
   };
@@ -552,6 +605,8 @@ ConditionalFns = {
   };
 
 LoopFns = {
+    // begin .. again -- our loop functions, which really needs to be enhanced
+    // to allow for conditionals.
     'begin': function( context ) {
       againBlock = context.scanUntil( "again", context );
 
@@ -566,11 +621,13 @@ LoopFns = {
   };
 
 ExecutionFns = {
+  // Our resolution of tokens to allow the browser to breathe.
   'tokenresolution': function( context ) {
     tokenresolution = context.stack.pop();
     context.executeCallback( context );
   },
 
+  // Define an execution block, which is a JavaScript array.
   '[': function( context ) {
     executionBlock = context.scanUntil( "]", context );
     if ( executionBlock != undefined ) {
@@ -602,7 +659,6 @@ ExecutionFns = {
   // Execute Forth block, this is currently run asynchronously now that loops
   // inject more tokens into the stream rather than execute a new context.
   '|': function( context ) {
-    // targetStack = context.stack.pop()
     forthCoro = context.stack.pop();
 
     newContext = applyExecutionContext.apply( createContext( context ) );
@@ -611,22 +667,9 @@ ExecutionFns = {
   },
 
   // A Forth RPC -- we can send a Forth execution block to a server to
-  // execute on our behalf.  We can also redirect the output of the stack
-  // to a stack other than @global.
+  // execute on our behalf.
   '#': function( context ) {
-    // stackToUse = context.stack.pop()
     forthExecutionBlock = context.stack.pop();
-
-    // if ( stackToUse != undefined ) {
-    //  if ( stackToUse in stacks ) {
-    //    targetStack = stacks[ stackToUse ]
-    //  } else {
-    //    targetStack = new Stack()
-    //   stacks[ stackToUse ] = targetStack
-    //  }
-    // } else {
-    //  stackToUse = stacks[ "@global" ]
-    // }
 
     // We actually block the main execution thread until we complete getting
     // a response back.  Server responses are encoded in JSON, with an array
@@ -649,10 +692,8 @@ ExecutionFns = {
     // Our RPC call is made via XMLHttpRequest asynchronously, though we
     // force this execution thread to wait until this completes.  The contents
     // of the execution block are sent to the server in JSON.
-
     var myRequest = new XMLHttpRequest();
     myRequest.onload = responseIntoContext( context );
-    // responseIntoStack.targetStack = targetStack;
     myRequest.open( "POST", "", true );
     myRequest.setRequestHeader( "Content-Type", "text/plain" );
     myRequest.send( JSON.stringify( forthExecutionBlock ) );
@@ -662,6 +703,8 @@ ExecutionFns = {
 currTokenCount = 0;
 tokenresolution = 200;
 
+// Set up our initial Forth context with dictionary, stack, and then the
+// context containing all of them.
 initialDictionary = createDictionary(
   { forthWords: [ ForthFns,
                   StackFns,
