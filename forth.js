@@ -281,14 +281,8 @@ var applyExecutionContext = function( context ) {
         }
       // Check if our token is a number so that we properly push it onto the
       // stack as an int or a float.
-      } else if ( !isNaN(currToken) ) {
-          tokenInt = parseInt( currToken );
-          tokenFloat = parseFloat( currToken );
-          if ( tokenInt == tokenFloat ) {
-            context.stack.push( tokenInt );
-          } else {
-            context.stack.push( tokenFloat );
-          }
+      } else if ( !isNaN( currToken ) ) {
+          context.stack.push( parseFloat( currToken) );
           context.nextToken( context );
       } else {
         // We don't appear to be anything that we need to execute, so we 
@@ -362,16 +356,7 @@ var applyExecutionContext = function( context ) {
           // Null token to discard, caused by extra whitespaces.
           tokens.splice( tokenIndex, 1 );
         } else if ( !isNaN(tokens[tokenIndex]) ) {
-          // We're a number, but what kind?  We determine this by converting
-          // to an Integer or a Float -- if they're the same, it's an Integer,
-          // if they are different, it's a Float.
-          tokenInt = parseInt( tokens[ tokenIndex ] );
-          tokenFloat = parseFloat( tokens[ tokenIndex ] );
-          if ( tokenInt == tokenFloat ) {
-            tokens[ tokenIndex ] = tokenInt;
-          } else {
-            tokens[ tokenIndex ] = tokenFloat;
-          }
+          tokens[ tokenIndex ] = parseFloat( tokens[ tokenIndex ] );
           tokenIndex += 1;
         } else {
           // We were a string, but we're not anything, so we skip over this
