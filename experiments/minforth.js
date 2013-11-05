@@ -16,14 +16,14 @@ ctx = {
 			s.push( ( s.pop() + s.pop() ) );
 		},
 		"-": function() {
-			s.push( s.pop(), s.pop() );
+			d.swap();
 			s.push( s.pop() - s.pop() );
 		},
 		'*': function() {
 			s.push( s.pop() * s.pop() );
 		},
 		'/': function() {
-			s.push( s.pop(), s.pop() );
+			d.swap();
 			s.push( s.pop() / s.pop() );
 		},
 		'.s': function() {
@@ -43,7 +43,7 @@ e = function(t) {
 	while ( t.length ) {
 		w = t.shift();
 		if ( w in d ) {
-			d[w].apply(this);
+			d[w]();
 		} else if ( !( isNaN( w ) ) ) {
 			s.push( parseFloat( w ) );
 		} else if ( w !== '' ) {
