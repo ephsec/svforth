@@ -14,7 +14,6 @@ initialContext = forth.createContext( { dictionary: forth.initialDictionary } );
 executionContext = forth.applyExecutionContext.apply( initialContext );
 executionContext.load( 'forth/rss.f' );
 
-
 function parseInput(data) {
     executionContext.execute(data);
     process.stdout.write(">> ");

@@ -248,7 +248,7 @@ var applyExecutionContext = function( context ) {
 
     // We move onto the next token by assigning the new token to currToken
     // and dropping it from the current token stream.
-    currToken = this.advanceToken( context );
+    currToken = context.tokens.shift();
 
     // We're a string, so we need to evaluate it.
     if ( typeof( currToken ) == 'string' ) {
@@ -304,12 +304,6 @@ var applyExecutionContext = function( context ) {
       context.stack.push( currToken );
       context.nextToken( context );
     }
-  }
-
-  // Advance to the next token, discarding it from the input stream and 
-  // returning it.
-  this.advanceToken = function( context ) {
-    return( context.tokens.splice(0, 1)[ 0 ] );
   }
 
   // We are called at the end of every Forth function; this is usually
@@ -400,7 +394,7 @@ var applyExecutionContext = function( context ) {
     context = this;
     loadCallback = function() {
       fileContents = context.stack.pop();
-      tokenizedContents = fileContents.split(/\s/);
+      tokenizedContents = fileContents.split( /\s/ );
       context.tokens = tokenizedContents.concat( context.tokens );
       context.nextToken( context );
     }
@@ -482,10 +476,7 @@ StackFns = {
 
   // swap - ( a b c ) -> ( a c b ), []
   'swap': function( context ) {
-      top = context.stack.pop();
-      next = context.stack.pop();
-      context.stack.push( top );
-      context.stack.push( next );
+      context.stack.push( context.stack.pop(), context.stack.pop() );
       context.executeCallback( context );
     },
 
@@ -499,9 +490,7 @@ StackFns = {
 
   // rot -- ( a b c d ) -> ( b c d a )
   'rot': function( context ) {
-      bottom = context.stack[0];
-      context.stack.splice(0, 1);
-      context.stack.push( bottom );
+      context.stack.push( context.stack.shift() );
       context.executeCallback( context );
     },
 
@@ -549,9 +538,8 @@ ArithmeticFns = {
     },
 
   '-': function( context ) {
-      first = context.stack.pop();
-      second = context.stack.pop();
-      context.stack.push( second - first );
+      context.stack.push( context.stack.pop(), context.stack.pop() );
+      context.stack.push( context.stack.pop() - context.stack.pop() );
       context.executeCallback( context );
     },
 
@@ -561,9 +549,8 @@ ArithmeticFns = {
     },
 
   '/': function( context ) {
-      first = context.stack.pop();
-      second = context.stack.pop();
-      context.stack.push( second / first );
+      context.stack.push( context.stack.pop(), context.stack.pop() );
+      context.stack.push( context.stack.pop() - context.stack.pop() );
       context.executeCallback( context );
     },
 
