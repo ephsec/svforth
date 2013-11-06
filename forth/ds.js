@@ -88,7 +88,7 @@ DataStructureFns = {
   //    [ { a: 0, b: 1 } { a: 1, b: 2 } { a: 'x', b: 3 } ] 'a' ds-get-all -->
   //        0 1 'x'
   //
-  "ds-get-all": function( callback ) {
+  "ds-get-all": function( context ) {
     index = context.stack.pop();
     item = context.stack.pop();
     for (var i in item) {
@@ -99,6 +99,17 @@ DataStructureFns = {
         // If we don't find the index, we just skip this error.
       }
     }
+    context.executeCallback( context );
+  },
+
+  // push-array                                   ( array item -- array )
+  //
+  // Given a DS, push the item off the stack onto the array
+  "push-array": function( context ) {
+    item = context.stack.pop();
+    arr = context.stack.pop();
+    arr.push( item );
+    context.stack.push( arr );
     context.executeCallback( context );
   }
 }
