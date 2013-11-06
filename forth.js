@@ -177,21 +177,25 @@ var applyExecutionContext = function( context ) {
       // We were not passed any input to execute, so we execute the tokens that
       // are already set in the current context.
       input = context.tokens;
-    }
+    };
 
     if ( typeof( input ) == "string" ) {
       // If we're a string, we split along a whitespace delimiter, for crude
       // 'tokenization'.
-      context.tokens = input.split( /\s/ );
+      tokens = input.split( /\s/ );
     } else if ( typeof( input ) == "object" ) {
       // We were passed an array, so we want to make a copy of the array rather
       // than operate directly on the array.  Operating on a definition would
       // be very bad, and break us.
-      context.tokens = input.slice(0);
+      tokens = input.slice(0);
     } else {
       // We don't know what the hell we were passed.
       throw( "Invalid input to execution parser." );
     }
+
+    // Rather than replace the tokens, we inject our execution *before* the
+    // currently existing tokens in the stream.
+    context.tokens = tokens.concat( context.tokens );
 
     // If we reach the end of execution of this context, we can return to a
     // different context.
@@ -337,6 +341,11 @@ var applyExecutionContext = function( context ) {
         // output, so we discard them.
         if ( token == "(" ) {
           tokens.splice( tokenIndex, tokens.indexOf( ")" ) - tokenIndex + 1 );
+        // We skip blocks.
+        } else if ( token == "[" ) {
+          wordLookup = this.dictionary.getWord( "[" );
+          tokens[ tokenIndex ] = wordLookup;
+          tokenIndex = tokens.indexOf( "]", tokenIndex ) + 1;
         // We do a lookup in our dictionary for the token string.
         } else if ( tokens[tokenIndex] in this.dictionary.definitions ) {
           // We found it, so insert the definition directly into the token
@@ -473,15 +482,21 @@ StackFns = {
       context.executeCallback( context );
     },
 
-  // rot -- ( a b c d ) -> ( b c d a )
+  // rot -- ( a b c ) -> ( b a c )
   'rot': function( context ) {
-      context.stack.push( context.stack.shift() );
+      first = context.stack.pop();
+      second = context.stack.pop();
+      third = context.stack.pop();
+      context.stack.push( second, third, first );
       context.executeCallback( context );
     },
 
-  // min_rot -- ( a b c d ) -> ( d a b c )
+  // min_rot -- ( a b c ) -> ( c a b )
   '-rot': function( context ) {
-      context.stack.splice( 0, 0, context.stack.pop() );
+      first = context.stack.pop();
+      second = context.stack.pop();
+      third = context.stack.pop();
+      context.stack.push( first, third, second );
       context.executeCallback( context );
     },
 
@@ -509,11 +524,11 @@ StackFns = {
 
 DebugFns = {
   'listwords': function( context ) {
-      for ( var word in context.dictionary ) {
+      for ( var word in context.dictionary.definitions ) {
         context.stack.push( word );
       }
       context.executeCallback( context );
-    }
+    },
   };
 
 ArithmeticFns = {
@@ -654,15 +669,10 @@ ExecutionFns = {
       // an RPC call to a remote Python implementation.
       for (var index in executionBlock) {
         currToken = executionBlock[ index ];
-        if ( !isNaN(currToken) ) {
-          tokenInt = parseInt( currToken );
+        if ( currToken !== '' && !isNaN(currToken) ) {
           tokenFloat = parseFloat( currToken );
-          if ( tokenInt == tokenFloat ) {
-            executionBlock[ index ] = tokenInt;
-          } else {
-            executionBlock[ index ] = tokenFloat;
+          executionBlock[ index ] = tokenFloat;
           }
-        }
       }
       // The executionBlock is pushed onto the stack as a distinct 
       // individual object.
@@ -717,6 +727,13 @@ ExecutionFns = {
   }
 }
 
+ExtraFns = {
+  "time": function(context) {
+    context.stack.push( new Date().getTime() );
+    context.executeCallback( context );
+  }
+}
+
 currTokenCount = 0;
 tokenresolution = 200;
 
@@ -728,7 +745,9 @@ initialDictionary = createDictionary(
                   ArithmeticFns,
                   ConditionalFns,
                   LoopFns,
-                  ExecutionFns ] } );
+                  ExecutionFns,
+                  ExtraFns,
+                  DebugFns ] } );
 initialContext = createContext( { dictionary: initialDictionary } );
 executionContext = applyExecutionContext.apply( initialContext );
 
