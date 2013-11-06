@@ -1,0 +1,16 @@
+{ "name": "svforth",
+  "version": "1.0.0",
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/ephsec/svforth.git"
+  },
+  "author": {
+    "name": "Wes Brown",
+    "email": "wbrown@ephemeralsecurity.com"
+  },
+  "dependencies": { 
+    "pg" : "2.6.2" 
+  }
+}
+  
+ 
