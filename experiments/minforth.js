@@ -52,4 +52,4 @@ e = function(t) {
 	}
 }
 
-e.apply(ctx, ['1 2 3 rot + 1 - 2 * 2 / 1 -rot .s']);
+e.apply(ctx, ['1 2 3 .s rot .s + .s 1 - 2 * 2 / 1 .s -rot .s']);
