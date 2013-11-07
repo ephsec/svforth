@@ -12,12 +12,12 @@ forth.initialDictionary.registerWords( url.URLFns );
 forth.initialDictionary.registerWords( database.DatabaseFns );
 forth.initialDictionary.registerWords( server.ServerFns );
 
-console.log( forth.initialDictionary.definitions );
-
 initialContext = forth.createContext( { dictionary: forth.initialDictionary } );
 executionContext = forth.applyExecutionContext.apply( initialContext );
 executionContext.load( 'forth/rss.f' );
 executionContext.load( 'site.f' );
+
+console.log( forth.initialDictionary.definitions );
 
 function parseInput(data) {
     executionContext.execute(data);
