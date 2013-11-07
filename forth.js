@@ -561,6 +561,107 @@ ArithmeticFns = {
     }
   };
 
+// String type and manipulation functions.
+splitString = 0;
+parseString = 1;
+
+parseSplitString = function( stringObject, delim, parseOrSplit ) {
+    findDelim = stringObject.search( delim );
+    if ( findDelim ) {
+      return( [ stringObject.split( delim, 1 )[0],
+                stringObject.substr( findDelim + parseOrSplit ),
+                true ] );
+    } else { 
+      return( [ stringObject,
+                '',
+                false ] );
+    };
+}
+
+StringFns = {
+  // ."                                              ( ." a b c " -- "a b c" )
+  '."': function( context ) {
+    stringBlock = context.scanUntil( '"', context );
+    if ( stringBlock != undefined ) {
+      stringObject = stringBlock.join( " " );
+      context.stack.push( stringObject );
+    } else {
+      throw( "Unterminated string found." );
+    }
+    context.executeCallback( context );
+  },
+
+  // $=                                                       ( $1 $2 -- flag )
+  //
+  // Compare strings.  True if equal.
+
+  '$=': function( context ) {
+    conditional( context.stack.pop() == context.stack.pop(), context );
+    context.executeCallback( context );
+  },
+
+  // sindex                                                      ( $1 $2 -- n )
+  //
+  // Search for an occurrence of $1 inside $2.  If found, n is the offset
+  // within $2 where it was found.  If not found, n is -1.
+  'sindex': function( context ) {
+    context.stack.push( context.stack.pop().search( context.stack.pop() ) );
+    context.executeCallback( context );
+  },
+
+  // split-string                                   ( $1 delim -- tail$ head$ )
+  //
+  // Find the first occurrence of the character "delim" in $1.  If found,
+  // head$ is the portion of $1 up to but not including the delimiter and tail$
+  // is the portion of $1 from the delimiter (inclusive) to the end.  If not
+  // found, head$ is $1 and tail$ is empty (i.e. its length is 0).
+  'split-string': function( context ) {
+    stringSplit = parseSplitString( context.stack.pop(),
+                                    context.stack.pop(),
+                                    splitString );
+    context.stack.push( stringSplit[ 0 ], stringSplit[ 1 ] );
+    context.executeCallback( context );
+  },
+
+  // left-parse-string                              ( $1 delim -- tail$ head$ )
+  // 
+  // Find the first occurrence of "delim" in $1.  If found, head$ is the
+  // portion of $1 up to but not including the delimiter and tail$ is the
+  // portion of $1 after the delimiter (not inclusive) to the end.  If not
+  // found, head$ is $1 and tail$ is empty (i.e. its length is 0).
+  'left-parse-string': function( context ) {
+    stringSplit = parseSplitString( context.stack.pop(),
+                                    context.stack.pop(),
+                                    parseString );
+    context.stack.push( stringSplit[ 0 ], stringSplit[ 1 ] );
+    context.executeCallback( context );
+  },
+
+  // lex                     ( $1 delim$ -- tail$ head$ delim true | $1 false )
+  // 
+  // Find the first occurrence in $1 of any character in delim$ .  If found,
+  // head$ is the portion of $1 up to but not including the delimiter,
+  // tail$ is the portion of $1 after the delimiter (not inclusive) to the
+  // end, delim is the actual character found, and the top of the stack is
+  // true.  If not found, $1 is the original value of $1 and the top of
+  // the stack is false.
+  'lex': function( context ) {
+    stringSplit = parseSplitString( context.stack.pop(),
+                                    context.stack.pop(),
+                                    parseString );
+    if ( stringSplit[2] === true ) {
+      context.stack.push( stringSplit[ 0 ], // head
+                          stringSplit[ 1 ], // tail
+                          1 );              // true
+    } else {
+      context.stack.push( stringSplit[ 0 ], // original string
+                          0 );              // false
+    };
+    context.executeCallback( context );
+
+  }
+}
+
 
 var conditional = function( result, context ) {
   if ( result ) {
@@ -651,6 +752,9 @@ LoopFns = {
       }
     }
   };
+
+
+
 
 ExecutionFns = {
   // Our resolution of tokens to allow the browser to breathe.
@@ -743,6 +847,7 @@ initialDictionary = createDictionary(
   { forthWords: [ ForthFns,
                   StackFns,
                   ArithmeticFns,
+                  StringFns,
                   ConditionalFns,
                   LoopFns,
                   ExecutionFns,
