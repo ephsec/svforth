@@ -343,10 +343,27 @@ var applyExecutionContext = function( context ) {
           tokens.splice( tokenIndex, tokens.indexOf( ")" ) - tokenIndex + 1 );
         // We skip blocks.
         } else if ( token == "[" ) {
+          endBlock = tokens.indexOf( "]", tokenIndex )
+          if ( !( endBlock ) ) {
+            throw( "COMPILE ERROR: No terminating ] found for [ block." );
+          };
           wordLookup = this.dictionary.getWord( "[" );
           tokens[ tokenIndex ] = wordLookup;
           tokenIndex = tokens.indexOf( "]", tokenIndex ) + 1;
         // We do a lookup in our dictionary for the token string.
+        } else if ( token == '."' ) {
+          endString = tokens.indexOf( '"' );
+          // We insert our entire string as an object in the token stream.
+          if ( endString ) {
+            // Convert our stream of tokens into a string.
+            tokens[ tokenIndex ] = tokens.splice(
+              tokenIndex + 1,                              // ."
+              endString - tokenIndex - 1 )                 // "
+              .join( " " );                                // finally, string
+            tokens.splice( tokenIndex + 1, 1 );            // remove trailing "
+          } else {
+            throw( 'COMPILE ERROR: No terminating " found for ." string.' );
+          }
         } else if ( tokens[tokenIndex] in this.dictionary.definitions ) {
           // We found it, so insert the definition directly into the token
           // stream in place of the word.  This can be a JavaScript function,
