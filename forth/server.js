@@ -44,6 +44,7 @@ ServerFns = { "start-server": function(context) {
     console.log( request.url, request.method );
     } ).listen(8000, '127.0.0.1');
   console.log( "Server started." );
+  context.executeCallback( context );
   }
 }
 
