@@ -2,6 +2,27 @@ if ( typeof DOMParser === undefined ) {
   var DOMParser = require('xmldom').DOMParser;
 }
 
+// Method to support various mechanisms to load a library depending on
+// environment.
+function importJSLibrary(library) {
+  // If window is undefined, then it's probably a node.js instance which
+  // imports using 'require'.
+  if (typeof window == 'undefined') {
+    require("./" + library)
+  } else {
+    // We're probably a browser, so we inject our script load into the DOM.
+    var body = document.body;
+    var script = document.createElement('script');
+    script.type = 'text/javascript';
+    script.src = library;
+    body.appendChild(script);
+  }
+}
+
+// We have a much more secure and sane way to deal with JSON parsing that
+// doesn't use eval().
+importJSLibrary( '../lib/json.js' )
+
 // Given an XML DOM object, we convert it to a JavaScript data structure
 function xml2js(node) {
   var data = {};
@@ -64,7 +85,7 @@ DataStructureFns = {
     context.executeCallback( context );
   },
 
-  // ds-get                                                ( js-ds -- item )
+  // ds-get                                          ( js-ds index -- item )
   //
   // Given a DS, get the item at index, and push it onto the stack.
   //
@@ -78,6 +99,23 @@ DataStructureFns = {
     context.stack.push( item[ index ] )
     context.executeCallback( context );
   },
+
+  // ds-put                                    ( js-ds index item -- js-ds )
+  // Given a DS, put the item at the index.
+  //
+  // Examples:
+  // [ 'a' 'b' ] c 2 ds-put --> [ 'a' 'b' 'c' ]
+  // { a: 0, b: 1 } 2 c ds-put --> { a: 0, b: 1, c: 2 }
+
+  "ds-put": function( context ) {
+    index = context.stack.pop();
+    item = context.stack.pop();
+    ds = context.stack.pop();
+    ds[ index ] = item;
+    context.stack.push( ds );
+    context.executeCallback( context );
+  },
+
 
   // ds-get-all                                 ( js-ds -- item0 item1 ... )
   //
@@ -111,7 +149,15 @@ DataStructureFns = {
     arr.push( item );
     context.stack.push( arr );
     context.executeCallback( context );
+  },
+
+  // json-to-ds                                            ( json -- ds )
+  "json-to-ds": function( context ) {
+    jsonItem = context.stack.pop();
+    context.stack.push( jsonParse( jsonItem ) );
+    context.executeCallback( context );
   }
+
 }
 
 if (typeof initialDictionary !== 'undefined') {
