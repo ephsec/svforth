@@ -29,12 +29,15 @@ function createDSObject(spec) {
       { text: inQuery,
         values: inParameters },
       function(err, result) {
-        console.log(err, result);
       });
 
     // For each row, we insert into the stack.
     currQuery.on('row', function( row ) {
+      // row.beginRowTime = new Date().getTime() / 1000;
       context.stack.push( row );
+      // row.endRowTime = new Date().getTime() / 1000;
+      // console.log( "Row processed in " + \ 
+      //   ( row.endRowTime - row.beginRowTime ) + "s" );
     });
 
     // Once we're done, we close up and return execution to Forth.
@@ -56,7 +59,6 @@ DatabaseFns = {
   // create a dbConnection object and insert it into the stack.
   "create-dbconn": function(context) {
     connParams = context.stack.pop();
-    console.log( connParams );
     context.stack.push( createDSObject( { connParams: connParams } ) );
     context.executeCallback( context ); 
   },
