@@ -37,7 +37,7 @@ if ( typeof window === 'undefined' ) {
     fs.readFile( path, function ( err, data ) {
       if (err) throw err;
       context.stack.push( new String( data ) );
-      loadCallback();
+      loadCallback( context );
     } );
   }
 } else {
@@ -45,7 +45,7 @@ if ( typeof window === 'undefined' ) {
     function responseIntoStack() {
       if (this.readyState == 4) {
         context.stack.push( req.responseText );
-        loadCallback();
+        loadCallback( context );
       }
     }
 
@@ -88,8 +88,14 @@ var createContext = function( spec ) {
   if ( typeof spec === 'undefined' ) { spec = {} };
   if ( 'dictionary' in spec ) { var dictionary = spec.dictionary }
     else { var dictionary = createDictionary() };
+  if ( 'coros' in spec ) { var coros = spec.coros }
+    else { var coros = [] };
+  if ( 'stacks' in spec ) { var stacks = spec.stacks }
+    else { var stacks = { "@global": createStack( "@global" ) } };
   if ( 'stack' in spec ) { var stack = spec.stack }
-    else { var stack = [] };
+    else { var stack = stacks[ "@global" ] };
+  if ( 'writeStack' in spec ) { var writeStack = spec.writeStack }
+    else { var writeStack = stacks[ "@global" ] };
   if ( 'tokens' in spec ) { var tokens = spec.tokens }
     else { var tokens = [] };
   var returnValue = spec.returnValue;
@@ -99,6 +105,8 @@ var createContext = function( spec ) {
 
   context.dictionary = dictionary
   context.stack = stack
+  context.writeStack = writeStack
+  context.stacks = stacks
   context.tokens = tokens
   context.returnValue = returnValue
   context.callback = callback
@@ -167,19 +175,17 @@ var createDictionary = function( spec ) {
 // should be functions used with apply() rather than being re-passed context
 // to itself.
 var applyExecutionContext = function( context ) {
-  this.execute = function( input, returnContext ) {
-    // This is the only function that doesn't take context as an argument,
-    // instead leveraging the fact that we're a context object ourself; this
-    // segues into apply() very well.
-    var context = this;
 
+  this.preprocessInput = function( input, context ) {
     if ( typeof input === 'undefined' ) {
       // We were not passed any input to execute, so we execute the tokens that
       // are already set in the current context.
       input = context.tokens;
     };
 
-    if ( typeof( input ) == "string" ) {
+    // console.log( input );
+
+    if ( typeof( input ) === "string" ) {
       // If we're a string, we split along a whitespace delimiter, for crude
       // 'tokenization'.
       tokens = input.split( /\s/ );
@@ -187,30 +193,46 @@ var applyExecutionContext = function( context ) {
       // We were passed an array, so we want to make a copy of the array rather
       // than operate directly on the array.  Operating on a definition would
       // be very bad, and break us.
-      tokens = input.slice(0);
+      if ( 'slice' in input ) {
+        tokens = input.slice(0);
+      } else {
+        tokens = [ input ];
+      }
     } else {
       // We don't know what the hell we were passed.
       throw( "Invalid input to execution parser." );
     }
 
+    return( tokens );
+  }
+
+  this.execute = function( input, returnContext ) {
+    // This is the only function that doesn't take context as an argument,
+    // instead leveraging the fact that we're a context object ourself; this
+    // segues into apply() very well.
+
+    var context = this;
+
+    tokens = this.preprocessInput( input );
+
     // Rather than replace the tokens, we inject our execution *before* the
     // currently existing tokens in the stream.
-    context.tokens = tokens.concat( context.tokens );
+    this.tokens = tokens.concat( this.tokens );
 
     // If we reach the end of execution of this context, we can return to a
     // different context.
     if ( typeof( returnContext ) !== 'undefined' ) {
-      context.returnContext = returnContext;
+      this.returnContext = returnContext;
     }
 
     // Kick off our execution parser on our current context.
-    context.nextToken( context );
+    this.nextToken();
   }
 
   // Advance to the next token in our input stream.  This is really a wrapper
   // for parseNextToken which is a counter, and calls out to setTimeout() 
   // as appropriate to allow the browser to actually breathe.
-  this.nextToken = function( context ) {
+  this.nextToken = function() {
     if ( typeof currTokenCount !== 'undefined' ) {
       currTokenCount = currTokenCount + 1
     } else {
@@ -219,31 +241,39 @@ var applyExecutionContext = function( context ) {
 
     if ( ( currTokenCount % tokenresolution ) === 0 ) {
       // We've hit our speedbump, so call setTimeout.
-      var nextCall = function() {
-          context.parseNextToken( context );
-        }
-      setTimeout( nextCall, 0 );
+      var nextCall = function(context) { return( function() {
+          context.parseNextToken();
+        } ) };
+      setTimeout( nextCall( this ), 0 );
     } else {
       // Full speed ahead.
-      context.parseNextToken( context );
+      this.parseNextToken();
     }
   }
 
-  this.parseNextToken = function( context ) {
+  this.parseNextToken = function() {
     // Nothing more to parse, so we're done and return.
-    if ( context.tokens.length == 0 ) {
-      if ( typeof context.returnContext !== 'undefined' ) {
+    if ( this.tokens.length == 0 ) {
+      // if ( this.stack.coros.length !== 0 ) {
+      //  this.tokens = context.stack.coros.shift();
+      //  this.nextToken.apply( this );
+      //} else {
+      //  this.stack.running = false;
+      //}
+      if ( typeof this.returnContext !== 'undefined' ) {
         // We have another context to return to, so we execute the callback
         // on the old context to return control to it.
-        returnContext = context.returnContext;
-        context.executeCallback( returnContext );
+        returnContext = this.returnContext;
+        this.executeCallback( returnContext );
       } else {
         // Ensure that we're not called again, ending the token execution
         // loop.
-        context.callback = undefined;
+        this.callback = undefined;
         return;
       }
     }
+
+    var context = this;
 
     // Before we do anything, set our callback on the current context to 
     // advance to the next token.  All Forth functions should be calling the
@@ -252,13 +282,13 @@ var applyExecutionContext = function( context ) {
 
     // We move onto the next token by assigning the new token to currToken
     // and dropping it from the current token stream.
-    currToken = context.tokens.shift();
+    var currToken = context.tokens.shift();
 
     // We're a string, so we need to evaluate it.
     if ( typeof( currToken ) == 'string' ) {
       // Null string due to extra whitespace, ignore it.
       if ( currToken == "" ) {
-        context.nextToken( context );
+        context.nextToken.apply( this );
       } else if (currToken in context.dictionary.definitions) {
         // We're in the dictionary, so we do a lookup and retrieve the
         // definition.
@@ -272,7 +302,7 @@ var applyExecutionContext = function( context ) {
           // to execute it as an input stream.
           word = context.compile( word.split(/\s/) );
           context.tokens = word.concat( context.tokens );
-          context.nextToken( context );
+          context.nextToken.apply( this );
         } else {
           // The definition contained an array, so we insert this definition
           // into our current stream at the beginning.
@@ -281,18 +311,18 @@ var applyExecutionContext = function( context ) {
           // do not get tampered with.
           copyWord = word.splice(0);
           context.tokens = copyWord.concat( context.tokens );
-          context.nextToken( context );
+          context.nextToken.apply( this );
         }
       // Check if our token is a number so that we properly push it onto the
       // stack as an int or a float.
       } else if ( !isNaN( currToken ) ) {
           context.stack.push( parseFloat( currToken) );
-          context.nextToken( context );
+          context.nextToken.apply( this );
       } else {
         // We don't appear to be anything that we need to execute, so we 
         // push ourself as a string onto the stack.
         context.stack.push( currToken );
-        context.nextToken( context );
+        context.nextToken.apply( this );
       }
     } else if ( typeof( currToken ) == 'function' ) {
       // We're a closure, so invoke it directly.
@@ -300,7 +330,7 @@ var applyExecutionContext = function( context ) {
     } else if ( typeof( currToken ) !== 'undefined' ) {
       // We're not a string or a function, so push ourself onto the stack.
       context.stack.push( currToken );
-      context.nextToken( context );
+      context.nextToken.apply( this );
     }
   }
 
@@ -326,7 +356,7 @@ var applyExecutionContext = function( context ) {
   }
 
   this.compile = function( tokens ) {
-    tokenIndex = 0;
+    var tokenIndex = 0;
 
     // Check if we've been compiled in the past.
     if ( 'compiled' in tokens ) {
@@ -336,7 +366,7 @@ var applyExecutionContext = function( context ) {
     while ( tokenIndex <= tokens.length-1 ) {
       // We found a string in our token stream, so let's examine it.
       if ( typeof( tokens[ tokenIndex ] ) == 'string' ) {
-        token = tokens[ tokenIndex ];
+        var token = tokens[ tokenIndex ];
         // We are a begin comment; we don't want comments in our compiled
         // output, so we discard them.
         if ( token == "(" ) {
@@ -347,12 +377,12 @@ var applyExecutionContext = function( context ) {
           if ( !( endBlock ) ) {
             throw( "COMPILE ERROR: No terminating ] found for [ block." );
           };
-          wordLookup = this.dictionary.getWord( "[" );
+          var wordLookup = this.dictionary.getWord( "[" );
           tokens[ tokenIndex ] = wordLookup;
           tokenIndex = tokens.indexOf( "]", tokenIndex ) + 1;
         // We do a lookup in our dictionary for the token string.
         } else if ( token == '."' ) {
-          endString = tokens.indexOf( '"' );
+          var endString = tokens.indexOf( '"' );
           // We insert our entire string as an object in the token stream.
           if ( endString ) {
             // Convert our stream of tokens into a string.
@@ -369,12 +399,14 @@ var applyExecutionContext = function( context ) {
           // stream in place of the word.  This can be a JavaScript function,
           // or it can be a compiled array of tokens obtained from a definition
           // written in Forth.
-          wordLookup = this.dictionary.getWord( token );
+          var wordLookup = this.dictionary.getWord( token );
           // If we're a string, we want to keep the string lookup rather than
           // attempt to inject the string directly into the stream.
           if ( typeof( wordLookup ) === 'function' ) {
+            wordLookup.tokenName = token;
             tokens[ tokenIndex ] = wordLookup;
           } else {
+            wordLookup.tokenName = token;
             tokens[ tokenIndex ] = token;
           }
           tokenIndex += 1;
@@ -400,16 +432,31 @@ var applyExecutionContext = function( context ) {
     return( tokens );
   }
 
+  this.showTokens = function( context ) {
+    var tokenOutput = "";
+    for (tokenIndex in context.tokens) {
+      token = context.tokens[ tokenIndex ];
+      if ( typeof( token ) === 'undefined' ) {
+        tokenRep = 'undefined';
+      } else if ( token.hasOwnProperty( 'tokenName' ) ) {
+        tokenRep = "[ " + token.tokenName + " ]";
+      } else {
+        tokenRep = token;
+      }
+      tokenOutput = tokenOutput + tokenRep + " "; 
+    }
+    console.log( tokenOutput );
+  };
+
   // Load a Forth file into our current execution context.
   this.load = function( path ) {
-    context = this;
-    loadCallback = function() {
-      fileContents = context.stack.pop();
-      tokenizedContents = fileContents.split( /\s/ );
-      context.tokens = tokenizedContents.concat( context.tokens );
-      context.nextToken( context );
+    loadCallback = function( context ) {
+      var fileContents = context.stack.pop();
+      var tokenizedContents = fileContents.split( /\s/ );
+      context.tokens = tokenizedContents.concat( this.tokens );
+      context.nextToken.apply( context );
     }
-    getFile( path, context, loadCallback );
+    getFile( path, this, loadCallback );
   }
 
   // We return our context object enhanced with our execution functions.
@@ -419,17 +466,17 @@ var applyExecutionContext = function( context ) {
 ForthFns = {
   // : word ... ; -- our Forth word definitions.
   ":": function( context ) {
-    defineBlock = context.scanUntil( ";", context )
+    var defineBlock = context.scanUntil( ";", context )
 
     if ( defineBlock != undefined ) {
       // Our new word to define and put in the Dictionary.
-      newWord = defineBlock[0];
+      var newWord = defineBlock[0];
       // Our definition for the word is the rest of the statement up to ';'
-      definition = defineBlock.splice( 1, defineBlock.length );
+      var definition = defineBlock.splice( 1, defineBlock.length );
       // We compile our definition before storing it -- this speeds up
       // execution by replacing strings with function references in the
       // token array where appropriate.
-      definition = context.compile( definition );
+      var definition = context.compile( definition );
       // Actually define our word, just like JavaScript and Python does.
       context.dictionary.register( newWord, definition )
       context.executeCallback( context )
@@ -445,23 +492,134 @@ ForthFns = {
 
   // Forth loader exposed into Forth space.
   'load-forth': function( context ) {
-    path = context.stack.pop( context );
+    var path = context.stack.pop( context );
     context.load( path );
     },
   };
 
 // Core stack functions in Forth
+
+createStack = function(name) {
+  var channelFired = false;
+  var stack = [];
+  stack.name = name;
+  stack.channels = [];
+  stack.coros = [];
+  stack.running = false;
+  stack.ignoreRedirect = false;
+  stack.push = function() {
+    if ( arguments.length > 1 ) {
+      var args = Array.prototype.slice.call(arguments);
+    } else {
+      var args = [ arguments[0] ];
+    }
+
+    if ( context.hasOwnProperty( 'writeStack' ) && !( stack.ignoreRedirect ) ) {
+      if ( context.writeStack.name !== this.name ) {
+        context.writeStack.push.apply( context.writeStack, args );
+        return
+      }
+    }
+
+    if ( this.channels.length ) {
+      for ( channel in this.channels ) {
+        // We create a new context each time we call a channel on a stack,
+        // with a temporary local stack.
+        var channelContext = Object.create( context );
+        channelContext.tokens = [];
+        channelStackId = '#'+Math.floor(Math.random()*16777215).toString(16)
+        channelContext.stacks[ channelStackId ] = [];
+        channelContext.stack = channelContext.stacks[ channelStackId ];
+        channelContext.writeStack = channelContext.stack;
+        channelContext.stack.name = channelStackId;
+
+        // Insert our items to work upon onto our temporary channel stack.
+        [].push.apply( channelContext.stack, args );
+
+        // We execute our channel code on our channelContext.
+        channelContext.execute( this.channels[ channel ].slice(0) );
+
+        // We then copy the temporary stack contents into the stack that the
+        // channel was associated with.
+        [].push.apply( this, channelContext.stack );
+      };
+
+      return;
+    };
+
+    [].push.apply( this, args );
+
+  };
+
+  return( stack );
+}
+
 StackFns = {
+  'channel': function( context ) {
+    blockToExecute = context.stack.pop();
+    stackToWatch = context.stack.pop();
+
+    if ( !( stackToWatch in context.stacks ) ) {
+      context.stacks[ stackToWatch ] = createStack( stackToWatch );
+    };
+    stackToWatch = context.stacks[ stackToWatch ];
+    stackToWatch.channels.push( context.compile( blockToExecute ) );
+    context.executeCallback( context );
+  },
+
+  'pipe': function( context ) {
+    desiredStack = context.stack.pop();
+    if ( !( desiredStack in context.stacks ) ) {
+      context.stacks[ desiredStack ] = createStack( desiredStack );
+    };
+    context.writeStack = context.stacks[ desiredStack ];
+    context.executeCallback( context );
+  },
+
+  'cancel-pipe': function( context ) {
+    context.writeStack = context.stacks[ '@global' ];
+  },
+
+  'switch-stack': function( context ) {
+    desiredStack = context.stack.pop();
+    if ( !( desiredStack in context.stacks ) ) {
+      context.stacks[ desiredStack ] = createStack( desiredStack );
+    }
+    context.stack = context.stacks[ desiredStack ];
+    context.executeCallback( context );
+  },
+
   // pop - ( a b c ) -> ( a b ), [ c ]
-  'pop' : function( context ) {
+  'pop': function( context ) {
       context.returnValue = context.stack.pop();
       context.executeCallback( context );
     },
 
+  'pop-stack': function( context ) {
+      sourceStack = context.stacks[ context.stack.pop() ];
+      context.stack.push( sourceStack.pop() );
+      context.executeCallback( context );
+    },
+
   // push - [ d ], ( a b c ) -> ( a b c d )
-  'push' : function(item, context) {
+  'push': function(item, context) {
       context.stack.push( item );
       context.executeCallback( context );
+    },
+
+  'push-stack': function( context ) {
+      var target = context.stack.pop();
+      if ( !( target in context.stacks ) ) {
+        context.stacks[ target ] = createStack( target );
+      };
+      var value = context.stack.pop();
+
+      var targetStack = context.stacks[ target ];
+      //console.log( "V:", value, "T:", targetStack.name,
+      //  "W:", context.writeStack.name, "S:", context.stack.name );
+      targetStack.ignoreRedirect = true;
+      targetStack.push.apply( targetStack, [ value ] );
+      targetStack.ignoreRedirect = false;
     },
 
   // clear stack
@@ -525,8 +683,9 @@ StackFns = {
 
   // Output our stack onto the console.
   '.s': function( context ) {
-      for (var s in context.stack) {
-         console.log( s + ": " + JSON.stringify( context.stack[s] ) )
+      for (var s=0; s<context.stack.length; s++) {
+        try { console.log( context.stack.name + ":" + s + " = " + JSON.stringify( context.stack[s] ) ) }
+        catch (err) { console.log( s + ": cannot show" ) }
       }
       context.executeCallback( context );
     },
@@ -747,10 +906,13 @@ ConditionalFns = {
       if ( thenBlock == undefined ) {
         raise( "Syntax error: IF without THEN" );
       } else if ( context.stack.pop() != 0 ) {
-        context.execute( thenBlock );
+        thenBlock = context.compile( thenBlock );
+        context.tokens = thenBlock.concat( context.tokens );
       } else if ( typeof elseBlock != undefined ) {
-        context.execute( elseBlock );
+        context.compile( elseBlock );
+        context.tokens = elseBlock.concat( context.tokens );
       }
+      context.executeCallback( context );
     }
   };
 
@@ -782,16 +944,16 @@ ExecutionFns = {
 
   // Define an execution block, which is a JavaScript array.
   '[': function( context ) {
-    executionBlock = context.scanUntil( "]", context );
+    var executionBlock = context.scanUntil( "]", context );
     if ( executionBlock != undefined ) {
       // Do some typing of our AoT, particularly for numerics.  We don't
       // want to compile these, as these in particular may be run in another
       // context entirely that may resolve the symbols differently, like
       // an RPC call to a remote Python implementation.
       for (var index in executionBlock) {
-        currToken = executionBlock[ index ];
+        var currToken = executionBlock[ index ];
         if ( currToken !== '' && !isNaN(currToken) ) {
-          tokenFloat = parseFloat( currToken );
+          var tokenFloat = parseFloat( currToken );
           executionBlock[ index ] = tokenFloat;
           }
       }
@@ -851,6 +1013,10 @@ ExecutionFns = {
 ExtraFns = {
   "time": function(context) {
     context.stack.push( new Date().getTime() );
+    context.executeCallback( context );
+  },
+  "print": function(context) {
+    console.log( context.stack.pop() )
     context.executeCallback( context );
   }
 }
