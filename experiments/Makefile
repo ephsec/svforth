@@ -6,15 +6,15 @@ LLVMC=llc-3.3
 all: forth.ll
 	$(LLVMAS) forth.ll
 	$(LLVMC) forth.bc
-	gcc -o $(EXECUTABLE) $(EXECUTABLE).s
+	clang -o $(EXECUTABLE) $(EXECUTABLE).s
 	./$(EXECUTABLE)
 
 optimize:
 	$(LLVMOPT) forth.ll > forth.opt.ll
 	$(LLVMAS) forth.opt.ll
 	$(LLVMC) forth.opt.bc
-	gcc -o $(EXECUTABLE).opt $(EXECUTABLE).opt.s
-	./$(EXECUTABLE)
+	clang -o $(EXECUTABLE).opt $(EXECUTABLE).opt.s
+	./$(EXECUTABLE).opt
 
 clean:
 	rm $(EXECUTABLE)
