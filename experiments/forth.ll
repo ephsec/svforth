@@ -19,27 +19,27 @@ declare i32 @printf(i8*, ... )
 @stackString = internal constant [13 x i8] c"%llu: %llu\0D\0A\00"
 
 define void @printValue32(i32 %value) {
-  	%string = getelementptr [7 x i8]* @valueString, i32 0, i32 0
-  	%printf_ret = call i32 (i8*, ... )* @printf(i8* %string, i32 %value)
-  	ret void
+	%string = getelementptr [7 x i8]* @valueString, i32 0, i32 0
+	%printf_ret = call i32 (i8*, ... )* @printf(i8* %string, i32 %value)
+	ret void
 }
 
 define void @printValue64(i64 %value) {
-  	%string = getelementptr [7 x i8]* @valueString, i32 0, i32 0
-  	%printf_ret = call i32 (i8*, ... )* @printf(i8* %string, i64 %value)
-  	ret void
+	%string = getelementptr [7 x i8]* @valueString, i32 0, i32 0
+	%printf_ret = call i32 (i8*, ... )* @printf(i8* %string, i64 %value)
+	ret void
 }
 
 define void @printValueInt(%int %value) {
-  	%string = getelementptr [7 x i8]* @valueString, i32 0, i32 0
-  	%printf_ret = call i32 (i8*, ... )* @printf(i8* %string, %int %value)
-  	ret void
+	%string = getelementptr [7 x i8]* @valueString, i32 0, i32 0
+	%printf_ret = call i32 (i8*, ... )* @printf(i8* %string, %int %value)
+	ret void
 }
 
 define void @printValueCell(%cell %value) {
-  	%string = getelementptr [7 x i8]* @valueString, i32 0, i32 0
-  	%printf_ret = call i32 (i8*, ... )* @printf(i8* %string, %cell %value)
-  	ret void	
+	%string = getelementptr [7 x i8]* @valueString, i32 0, i32 0
+	%printf_ret = call i32 (i8*, ... )* @printf(i8* %string, %cell %value)
+	ret void	
 }
 
 ; *****************************************************************************
@@ -131,13 +131,13 @@ define %cell @getTopStack() {
 define void @next() {
 	%ins = call %int @nextExec()
 
-  	%is_done = icmp eq %int %ins, 0
-  	br i1 %is_done, label %done, label %execIns
+	%is_done = icmp eq %int %ins, 0
+	br i1 %is_done, label %done, label %execIns
 
 execIns:
 	%functionPtr = inttoptr %int %ins to void ()*
-	call void %functionPtr() 
-	ret void
+	call void %functionPtr()
+	ret void	
 
 done:
 	ret void
@@ -148,10 +148,10 @@ done:
 ; *****************************************************************************
 
 define void @showStack() {
-  	%stack_string = getelementptr [13 x i8]* @stackString, i64 0, i64 0
+	%stack_string = getelementptr [13 x i8]* @stackString, i64 0, i64 0
 
-  	; set up our loop with the current stack pointer
-  	%currStackIdx = alloca %int
+	; set up our loop with the current stack pointer
+	%currStackIdx = alloca %int
 	%getStackIdx = load %pntr @stackIdx
 	store %int %getStackIdx, %pntr %currStackIdx
 
@@ -165,8 +165,8 @@ loop:
 	; load our current stack index into a temporary value
 	%stackIdx = load %pntr %currStackIdx
 	; check if the stack index has reached the heap size yet
-  	%is_done = icmp uge %int %stackIdx, %heapSize
-  	br i1 %is_done, label %done, label %continue_loop
+	%is_done = icmp uge %int %stackIdx, %heapSize
+	br i1 %is_done, label %done, label %continue_loop
 
 continue_loop:
 	; call our getHeap routine to get the stack value under the index pointer
@@ -292,5 +292,5 @@ define %int @main() {
 
 	call void @next()
 
-    ret %int 0
+	ret %int 0
 }
