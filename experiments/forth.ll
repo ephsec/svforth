@@ -25,6 +25,8 @@ declare void @llvm.memcpy.p0i8.p0i8.i32(i8*, i8*, i32, i32, i1)
 @dictString = internal constant [6 x i8] c"DICT:\00"
 @tokenString = internal constant [7 x i8] c"TOKEN:\00"
 @compiledString = internal constant [10 x i8] c"COMPILED:\00"
+@charString = internal constant [6 x i8] c"CHAR:\00"
+@progOutString = internal constant  [9 x i8] c"PROGRAM:\00"
 @dictNavString = internal constant [15 x i8] c"--> %s (%llu) \00"
 @newlineString = internal constant [3 x i8] c"\0D\0A\00"
 
@@ -312,108 +314,131 @@ notFound:
 }
 
 ; *** compiler functions
-define void @compile(i8* %programString, %int %heapIdx) {
-    %compiledString = getelementptr [10 x i8]* @compiledString, i32 0, i32 0
+define void @compile(i8* %programString.ptr, %int %heapIdx.value) {
+    ; c"PROGRAM:\00"
+    %progOutString.ptr = getelementptr [9 x i8]* @progOutString, i32 0, i32 0
+    ; c"COMPILED:\00"
+    %compiledString.ptr = getelementptr [10 x i8]* @compiledString, i32 0, i32 0
+    ; c"CHAR:\00"
+    %charString.ptr = getelementptr [6 x i8]* @charString, i32 0, i32 0
 
-    %progStrIdx = alloca i32
-    %beginCurrToken = alloca i32
-    %currChrPtr = alloca i8
-    %currHeapIdx.ptr = alloca %int
+    %progStrIdx.ptr = alloca i32        ; where we are in the program string
+    %beginCurrToken.ptr = alloca i32    ; where the current token begins
+    %currChr.ptr = alloca i8            ; a pointer to the current character
+    %currHeapIdx.ptr = alloca %int      ; where in the heap we insert our token
 
-    store i32 0, i32* %progStrIdx
-    store %int %heapIdx, %int* %currHeapIdx.ptr
+    ; we start at the beginning of the program string
+    store i32 0, i32* %progStrIdx.ptr
+    ; initialize our local heap pointer to the value passed into the function
+    store %int %heapIdx.value, %int* %currHeapIdx.ptr
 
+    ; show the user what we're working with
+    call void @printTwoString(i8* %progOutString.ptr, i8* %programString.ptr)
+
+    ; begin the whole process
     br label %beginToken
 
 beginToken:
-    ; we do initial setup and determine if we're looking at a null byte and
-    ; need to terminate our loop
-    %progStrIdxValue = load i32* %progStrIdx
+    ; grab our current program string index to work with
+    %progStrIdx.value = load i32* %progStrIdx.ptr
 
     ; mark this as the beginning of our new token
-    store i32 %progStrIdxValue, i32* %beginCurrToken
+    store i32 %progStrIdx.value, i32* %beginCurrToken.ptr
 
-    ; resolve and load our character to determine if we're null and to set up
-    ; for scanSpace
-    %currChrPtr_beginToken = getelementptr i8* %programString,
-                                           i32 %progStrIdxValue
-    %currChr_beginToken = load i8* %currChrPtr_beginToken
-    store i8 %currChr_beginToken, i8* %currChrPtr
+    ; resolve the programString pointer and index, and obtain our current char
+    %currChr.ptr.beginToken = getelementptr i8* %programString.ptr,
+                                           i32 %progStrIdx.value
+    %currChr.value.beginToken = load i8* %currChr.ptr.beginToken
+    store i8 %currChr.value.beginToken, i8* %currChr.ptr
 
-    ; check if we're a null byte and branch accordingly
-    %is_null = icmp eq i8 %currChr_beginToken, 0
-    br i1 %is_null, label %done, label %scanSpace
+    ; check if we're a null byte and branch accordingly; null byte terminates
+    %is_null.flag = icmp eq i8 %currChr.value.beginToken, 0
+    br i1 %is_null.flag, label %done, label %scanSpace
 
 scanSpace:
-    %currChr = load i8* %currChrPtr
+    ; debug call to show what character we're looking at
+    ;call void @printTwoString(i8* %charString.ptr, i8* %currChr.ptr)
+
+    %currChr.value = load i8* %currChr.ptr
     ; check if we're a space
-    %is_space = icmp eq i8 %currChr, 32
+    %is_space.flag = icmp eq i8 %currChr.value, 32
     ; also check if we're a null character
-    %is_null_scanSpace = icmp eq i8 %currChr, 0
+    %is_null.flag.scanSpace = icmp eq i8 %currChr.value, 0
     ; if we're a null character or a space, we terminate our token
-    %is_token = or i1 %is_space, %is_null_scanSpace
-    br i1 %is_token, label %handleToken, label %nextChr
+    %is_token.flag = or i1 %is_space.flag, %is_null.flag.scanSpace
+    br i1 %is_token.flag, label %handleToken, label %nextChr
 
 nextChr:
     ; advance the program pointer and set up the character for the next pass
-    %progStrIdxValue_nextChr = load i32* %progStrIdx
-    %newProgStrIdx = add i32 %progStrIdxValue_nextChr, 1
-    store i32 %newProgStrIdx, i32* %progStrIdx
-    %currChrPtr_nextChr = getelementptr i8* %programString, i32 %newProgStrIdx
-    %currChr_nextChr = load i8* %currChrPtr_nextChr
-    store i8 %currChr_nextChr, i8* %currChrPtr
+    %progStrIdx.value.nextChr = load i32* %progStrIdx.ptr
+    %nextProgStrIdx.value = add i32 %progStrIdx.value.nextChr, 1
+    store i32 %nextProgStrIdx.value, i32* %progStrIdx.ptr
+    ; grab our current character from programString and store it
+    %currChr.ptr.nextChr = getelementptr i8* %programString.ptr,
+                                         i32 %nextProgStrIdx.value
+    %currChr.value.nextChr = load i8* %currChr.ptr.nextChr
+    store i8 %currChr.value.nextChr, i8* %currChr.ptr
+    ; evaluate our new current character
     br label %scanSpace
 
 handleToken:
     ; compute and acquire the beginning and the end of the token
-    %progStrIdxValue_handleToken = load i32* %progStrIdx
-    ; the end of our current token is the program string pointer location
+    %progStrIdx.value.handleToken = load i32* %progStrIdx.ptr
+    ; the end of our current token is our current program string index
     %endCurrToken.ptr = alloca i32
-    store i32 %progStrIdxValue_handleToken, i32* %endCurrToken.ptr
-    %endCurrToken = load i32* %endCurrToken.ptr
-
-    %beginCurrTokenValue = load i32* %beginCurrToken
-    %tokenLength = sub i32 %endCurrToken, %beginCurrTokenValue
+    store i32 %progStrIdx.value.handleToken, i32* %endCurrToken.ptr
+    %endCurrToken.value = load i32* %endCurrToken.ptr
+    %beginCurrToken.value = load i32* %beginCurrToken.ptr
+    %tokenLength.value = sub i32 %endCurrToken.value, %beginCurrToken.value
     ; we include the null byte for our new token string
-    %tokenLengthPad = add i32 %tokenLength, 1
-
+    %tokenLengthPad.value = add i32 %tokenLength.value, 1
     ; get pointer to beginning of our token in the program string
-    %currTokenPtr = getelementptr i8* %programString, i32 %beginCurrTokenValue
+    %currTokenBegin.ptr = getelementptr i8* %programString.ptr,
+                                        i32 %beginCurrToken.value
 
     ; copy the token string in question from the program string source
-    %currToken = alloca i8, i32 %tokenLengthPad
-    call void @llvm.memcpy.p0i8.p0i8.i32(i8* %currToken, i8* %currTokenPtr,
-                                         i32 %tokenLength, i32 0, i1 0)
+    %currToken.ptr = alloca i8, i32 %tokenLengthPad.value
+    call void @llvm.memcpy.p0i8.p0i8.i32(i8* %currToken.ptr,
+                                         i8* %currTokenBegin.ptr,
+                                         i32 %tokenLength.value, i32 0, i1 0)
+
 
     ; add a null byte at the end to make it a null terminated string
-    ;%nullLocation = add i32 %tokenLength
-    %nullLocation.ptr = getelementptr i8* %currToken, i32 %tokenLength
+    %nullLocation.ptr = getelementptr i8* %currToken.ptr,
+                                      i32 %tokenLength.value
     store i8 00, i8* %nullLocation.ptr
 
-    ; lookup our token
-    %forthFn = call void ()* (i8*)* @lookupDictionary(i8* %currToken)
+    call void @printTwoString(i8* %charString.ptr, i8* %currToken.ptr)
 
-    %is_fnPtr_null = icmp eq %FNPTR %forthFn, null
+    ; lookup our token in the dictionary
+    %forthFn.ptr = call void ()* (i8*)* @lookupDictionary(i8* %currToken.ptr)
+
+    ; check if we have a function pointer, or a null pointer
+    %is_fnPtr_null = icmp eq %FNPTR %forthFn.ptr, null
     br i1 %is_fnPtr_null, label %advanceIdx, label %insertFn
 
 insertFn:
     %currHeapIdx.value = load %int* %currHeapIdx.ptr
 
     ; insert our function pointer into our heap
-    call void @insertToken( %int %currHeapIdx.value, %FNPTR %forthFn )
+    call void @insertToken(%int %currHeapIdx.value, %FNPTR %forthFn.ptr)
 
-    %newHeapIdx = add %int %currHeapIdx.value, 1
-    store %int %newHeapIdx, %int* %currHeapIdx.ptr
+    ; advance our local heap index now that we've inserted a token
+    %newHeapIdx.value = add %int %currHeapIdx.value, 1
+    store %int %newHeapIdx.value, %int* %currHeapIdx.ptr
 
-    call void @printTwoString( i8* %compiledString, i8* %currToken )
+    ; show that we've 'compiled' a token
+    call void @printTwoString(i8* %compiledString.ptr, i8* %currToken.ptr)
 
+    ; all done with the token, let's move on
     br label %advanceIdx
 
 advanceIdx:
     ; advance past the space we're hovering over at present
-    %newProgStrIdx_handleToken = add i32 %progStrIdxValue_handleToken, 1
-    store i32 %newProgStrIdx_handleToken, i32* %progStrIdx
+    %nextProgStrIdx.value.handleToken = add i32 %progStrIdx.value.handleToken, 1
+    store i32 %nextProgStrIdx.value.handleToken, i32* %progStrIdx.ptr
 
+    ; begin all over again
     br label %beginToken
 
 done:
