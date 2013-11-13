@@ -185,7 +185,7 @@ done:
 
 ; *** dictionary functions
 define void @registerDictionary(i8* %wordString, %WORD* %newDictEntry,
-							    %FNPTR %wordPtr) {
+								%FNPTR %wordPtr) {
 	%dictPtr = load %WORD** @dictPtr
 
 	%newDictEntry.prevEntry = getelementptr %WORD* %newDictEntry, i32 0, i32 0
@@ -362,7 +362,7 @@ handleToken:
 	; copy the token string in question from the program string source
 	%currToken = alloca i8, i32 %tokenLengthPad
 	call void @llvm.memcpy.p0i8.p0i8.i32(i8* %currToken, i8* %currTokenPtr,
-		                             	 i32 %tokenLength, i32 0, i1 0)
+										 i32 %tokenLength, i32 0, i1 0)
 
 	; add a null byte at the end to make it a null terminated string
 	;%nullLocation = add i32 %tokenLength
@@ -525,7 +525,7 @@ define %int @main() {
 	%i8_dispStack = bitcast [ 3 x i8 ]* %ptr_dispStack to i8*
 	%dictEntry.dispStack = alloca %WORD
 	call void @registerDictionary( i8* %i8_dispStack, 
-		                           %WORD* %dictEntry.dispStack,
+								   %WORD* %dictEntry.dispStack,
 								   %FNPTR @DISPSTACK )
 
 	; / - @DIV
@@ -533,7 +533,7 @@ define %int @main() {
 	%i8_div = bitcast [ 2 x i8 ]* %ptr_div to i8*
 	%dictEntry.div = alloca %WORD
 	call void @registerDictionary( i8* %i8_div, 
-		                           %WORD* %dictEntry.div,
+								   %WORD* %dictEntry.div,
 								   %FNPTR @DIV )
 
 	; * - @MUL
@@ -541,7 +541,7 @@ define %int @main() {
 	%i8_mul = bitcast [ 2 x i8 ]* %ptr_mul to i8*
 	%dictEntry.mul = alloca %WORD
 	call void @registerDictionary( i8* %i8_mul, 
-		                           %WORD* %dictEntry.mul,
+								   %WORD* %dictEntry.mul,
 								   %FNPTR @MUL )
 
 	; - - @SUB
@@ -549,7 +549,7 @@ define %int @main() {
 	%i8_sub = bitcast [ 2 x i8 ]* %ptr_sub to i8*
 	%dictEntry.sub = alloca %WORD
 	call void @registerDictionary( i8* %i8_sub,  
-		                           %WORD* %dictEntry.sub,
+								   %WORD* %dictEntry.sub,
 								   %FNPTR @SUB )
 
 	; + - @ADD
@@ -557,7 +557,7 @@ define %int @main() {
 	%i8_add = bitcast [ 2 x i8 ]* %ptr_add to i8*
 	%dictEntry.add = alloca %WORD
 	call void @registerDictionary( i8* %i8_add,  
-		                           %WORD* %dictEntry.add,
+								   %WORD* %dictEntry.add,
 								   %FNPTR @ADD )
 
 	; swap - @SWAP
@@ -565,7 +565,7 @@ define %int @main() {
 	%i8_swap = bitcast [ 5 x i8 ]* %ptr_swap to i8*
 	%dictEntry.swap = alloca %WORD
 	call void @registerDictionary( i8* %i8_swap,  
-		                           %WORD* %dictEntry.swap,
+								   %WORD* %dictEntry.swap,
 								   %FNPTR @SWAP )
 
 	; dup - @DUP
@@ -573,7 +573,7 @@ define %int @main() {
 	%i8_dup = bitcast [ 4 x i8 ]* %ptr_dup to i8*
 	%dictEntry.dup = alloca %WORD
 	call void @registerDictionary( i8* %i8_dup,  
-		                           %WORD* %dictEntry.dup,
+								   %WORD* %dictEntry.dup,
 								   %FNPTR @DUP )
 
 	; ** test our dictionary navigation
