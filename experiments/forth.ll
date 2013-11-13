@@ -9,6 +9,7 @@
 ; stdlib functions
 ; *****************************************************************************
 
+declare i8 @getchar()
 declare i32 @puts(i8*)
 declare i32 @read(%int, i8*, %int)
 declare i32 @printf(i8*, ... )
@@ -18,18 +19,19 @@ declare void @llvm.memcpy.p0i8.p0i8.i32(i8*, i8*, i32, i32, i1)
 ; for ease of debugging, allows us to print a value to stdout
 ; *****************************************************************************
 
-@valueString = internal constant [7 x i8] c"%llu\0D\0A\00"
-@stackString = internal constant [13 x i8] c"%llu: %llu\0D\0A\00"
-@wordString =  internal constant [5 x i8] c"%s\0D\0A\00"
-@twoWordString =  internal constant [8 x i8] c"%s %s\0D\0A\00"
-@dictString = internal constant [6 x i8] c"DICT:\00"
-@tokenString = internal constant [7 x i8] c"TOKEN:\00"
-@literalString = internal constant [9 x i8] c"LITERAL:\00"
+@valueString = internal constant    [7 x i8]  c"%llu\0D\0A\00"
+@stackString = internal constant    [13 x i8] c"%llu: %llu\0D\0A\00"
+@wordString =  internal constant    [5 x i8]  c"%s\0D\0A\00"
+@twoWordString =  internal constant [8 x i8]  c"%s %s\0D\0A\00"
+@dictString = internal constant     [6 x i8]  c"DICT:\00"
+@tokenString = internal constant    [7 x i8]  c"TOKEN:\00"
+@literalString = internal constant  [9 x i8]  c"LITERAL:\00"
 @compiledString = internal constant [10 x i8] c"COMPILED:\00"
-@charString = internal constant [6 x i8] c"CHAR:\00"
-@progOutString = internal constant  [9 x i8] c"PROGRAM:\00"
-@dictNavString = internal constant [15 x i8] c"--> %s (%llu) \00"
-@newlineString = internal constant [3 x i8] c"\0D\0A\00"
+@charString = internal constant     [6 x i8]  c"CHAR:\00"
+@progOutString = internal constant  [9 x i8]  c"PROGRAM:\00"
+@dictNavString = internal constant  [15 x i8] c"--> %s (%llu) \00"
+@newlineString = internal constant  [3 x i8]  c"\0D\0A\00"
+@promptString = internal constant   [5 x i8]  c" Ok \00"
 
 define void @printValue8(i8 %value) {
     %string = getelementptr [7 x i8]* @valueString, i32 0, i32 0
@@ -136,7 +138,6 @@ define void @insertLiteral(%int %index, %int %value) {
     call void @putHeap(%int %index, %int %value)
     ret void
 }
-
 
 ; **** stack manipulation functions
 define void @pushStack(%int %value) {
@@ -635,9 +636,13 @@ invalidLiteral:
     ret void
 
 done:
+    %currHeapIdx.value.done = load %pntr %currHeapIdx.ptr
+
+    ; clean up by terminating our compiled output with a null byte
+    call void @insertLiteral(%int %currHeapIdx.value.done,
+                             %int 0)
+
     ret void
-
-
 }
 
 ; *****************************************************************************
@@ -759,6 +764,59 @@ define void @DISPSTACK() noreturn {
 }
 
 ; *****************************************************************************
+; user interaction
+; *****************************************************************************
+
+define void @repl() {
+    %currChr.ptr = alloca i8
+    %inputBuffer.ptr = alloca i8, i16 1024
+    %inputBufferIdx.ptr = alloca i16
+    store i8 0, i8* %currChr.ptr
+    store i16 0, i16* %inputBufferIdx.ptr
+
+    br label %inputLoop
+
+inputLoop:
+    %inputBufferIdx.value = load i16* %inputBufferIdx.ptr
+    %inChr.value = call i8 @getchar()
+
+    ; check for carriage return to decide if we execute or get another char
+    %is_cr = icmp eq i8 %inChr.value, 10
+    br i1 %is_cr, label %execBuffer, label %addBuffer
+
+addBuffer:
+    %inputBufferWindow.ptr = getelementptr i8* %inputBuffer.ptr,
+                                           i16 %inputBufferIdx.value
+    store i8 %inChr.value, i8* %inputBufferWindow.ptr
+    %newInputBufferIdx.value = add i16 %inputBufferIdx.value, 1
+    store i16 %newInputBufferIdx.value, i16* %inputBufferIdx.ptr 
+
+    br label %inputLoop
+
+execBuffer:
+    ; add a null byte at the end to make it a null terminated string
+    %nullLocation.ptr = getelementptr i8* %inputBuffer.ptr,
+                                      i16 %inputBufferIdx.value
+    store i8 00, i8* %nullLocation.ptr
+
+    ; compile our input into the beginning of our heap
+    call void @compile(i8* %inputBuffer.ptr, %int 0)
+
+    ; reset our execution pointer to 0
+    store %int 0, %pntr @execIdx
+
+    ; kick off our compiled program
+    call void @next()
+
+    ; reset our input buffer pointer to 0
+    store i16 0, i16* %inputBufferIdx.ptr
+
+    br label %inputLoop
+
+    ret void
+}
+
+; *****************************************************************************
 ; main function
 ; *****************************************************************************
 
@@ -847,6 +905,8 @@ define %int @main() {
 
     ; ** and finally, execute our program
     call void @next()
+
+    call void @repl()
 
     ret %int 0
 }
