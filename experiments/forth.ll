@@ -190,6 +190,51 @@ done:
 }
 
 ; *** dictionary functions
+;
+; The dictionary is a linked list, where the global dictionary pointer points
+; at the last word in the dictionary.  Each dictionary entry %WORD is defined
+; as such:
+;
+; { %WORD*, %FNPTR, i8* }
+;
+; * %WORD* is a pointer to the previous word in the dictionary
+; * %FNPTR* is a pointer to the function associated with this word
+; * i8* is a pointer to a null terminated string that contains the string
+;   representation of the word.
+;
+; In other words, it is:
+; +--------------------------+---------------------+-------+
+; | pointer to previous word | pointer to assembly | name  |
+; +--------------------------+---------------------+-------+
+;
+; So, an example dictionary would look like:
+;
+;         null - terminates dictionary
+;          ^
+;          |
+; +--------|-------------+--------------------------+-------+
+; | pointer to null      | pointer to @DISPSTACK fn | .s    |
+; +----------------------+--------------------------+-------+
+;          ^
+;          |
+; +--------|-------------+--------------------------+-------+
+; | pointer to DISPSTACK | pointer to @DIV fn       | /     |
+; +----------------------+--------------------------+-------+
+;          ^
+;          |
+; +--------|-------------+--------------------------+-------+
+; | pointer to DIV       | pointer to @MUL fn       | *     |
+; +----------------------+--------------------------+-------+
+;          ^
+;          |
+;          |
+;      @dictPtr*
+;
+; This arrangement allows Forth to redefine a word without overriding an
+; already compiled reference to the word.  Once the redefinition is done with,
+; it can then be FORGOT -- restoring the original definition.  This allows
+; for some very powerful redefinitions of functions for current contexts.
+
 define void @registerDictionary(i8* %wordString, %WORD* %newDictEntry,
                                 %FNPTR %wordPtr) {
     %dictPtr = load %WORD** @dictPtr
@@ -208,108 +253,158 @@ define void @registerDictionary(i8* %wordString, %WORD* %newDictEntry,
 }
 
 define void @printDictionary() {
-    %dictPtr = load %WORD** @dictPtr
+    ; c"--> %s (%llu) \00"
     %dictNavString.ptr = getelementptr [15 x i8]* @dictNavString, i32 0, i32 0
-    %dictWord.ptr = getelementptr %WORD* %dictPtr, i32 0
-    %dictWord = load %WORD* %dictWord.ptr
+
+    ; load the last word that the dictionary pointer references into %currWord
+    %dict.ptr = load %WORD** @dictPtr
+    %dictWord.ptr = getelementptr %WORD* %dict.ptr, i32 0
+    %dictWord.value = load %WORD* %dictWord.ptr
     %currWord.ptr = alloca %WORD
-    store %WORD %dictWord, %WORD* %currWord.ptr
+    store %WORD %dictWord.value, %WORD* %currWord.ptr
 
     br label %begin
-
 begin:
-    %is_null = icmp eq %WORD* %currWord.ptr, null
-    br i1 %is_null, label %done, label %printWord
+    ; check if we've hit a null pointer; if we have, we're done.
+    %is_null.flag = icmp eq %WORD* %currWord.ptr, null
+    br i1 %is_null.flag, label %done, label %printWord
 printWord:
+    ; derefernce our current word pointer and then our string
     %currWord.wordString.ptr.ptr = getelementptr %WORD* %currWord.ptr,
                                                         i32 0, i32 2
     %currWord.wordString.ptr = load i8** %currWord.wordString.ptr.ptr
+
+    ; obtain our function pointer, dereference it, and conver the pointer to
+    ; an int for human representation
     %forthFn.ptr.ptr = getelementptr %WORD* %currWord.ptr, i32 0, i32 1
     %forthFn.ptr = load void()** %forthFn.ptr.ptr
-    %forthFn.ptr.int = ptrtoint void()* %forthFn.ptr to i64
+    %forthFn.ptr.int = ptrtoint void()* %forthFn.ptr to %int
 
     ; print our pretty dictionary order
     %printf_ret = call i32 (i8*, ... )* @printf(i8* %dictNavString.ptr,
                                                 i8* %currWord.wordString.ptr,
                                                 i64 %forthFn.ptr.int)
 
-    ; advance to the definition now word now
+    ; advance to the next definition
     %nextWord.ptr.ptr = getelementptr %WORD* %currWord.ptr, i32 0, i32 0
     %nextWord.ptr = load %WORD** %nextWord.ptr.ptr
-    %is_next_null = icmp eq %WORD* %nextWord.ptr, null
-    br i1 %is_next_null, label %done, label %continueSetup
+
+    ; check if we've hit the end of our dictionary
+    %is_next_null.flag = icmp eq %WORD* %nextWord.ptr, null
+    br i1 %is_next_null.flag, label %done, label %continueSetup
 continueSetup:
+    ; store our next dictionary word into our current working word
     %nextWord = load %WORD* %nextWord.ptr
     store %WORD %nextWord, %WORD* %currWord.ptr
     br label %begin
 done:
+    ; clean up by outputting a new line before returning
     call void @outputNewLine()
     ret void
 
 }
 
 define %FNPTR @lookupDictionary(i8* %wordString) {
-    ; debug stuff
+    ; c"TOKEN:\00"
     %tokenString.ptr = getelementptr [ 7 x i8 ]* @tokenString, i32 0
     %tokenString.i8.ptr = bitcast [ 7 x i8 ]* %tokenString.ptr to i8*
+    ; c"DICT:\00"
     %dictString.ptr = getelementptr [ 6 x i8 ]* @dictString, i32 0
     %dictString.i8.ptr = bitcast [ 6 x i8 ]* %dictString.ptr to i8*
 
-    ; setup with the word passed in to look up
-    %dictPtr = load %WORD** @dictPtr
-
-    %dictWord.ptr = getelementptr %WORD* %dictPtr, i32 0
-    %dictWord = load %WORD* %dictWord.ptr
-    %currDictWord = alloca %WORD
-    store %WORD %dictWord, %WORD* %currDictWord
+    ; allocate our current index in the two words that we compare
     %charIdx.ptr = alloca i32
+
+    ; setup with the tail end of our dictionary
+    %tailDictPtr.ptr = load %WORD** @dictPtr
+    %dictWord.ptr = getelementptr %WORD* %tailDictPtr.ptr, i32 0
+    %dictWord.value = load %WORD* %dictWord.ptr
+
+    ; copy our current dictWord into a local working space
+    %currDictWord.ptr = alloca %WORD
+    store %WORD %dictWord.value, %WORD* %currDictWord.ptr
 
     br label %begin
 
 begin:
-    %is_null = icmp eq %WORD* %currDictWord, null
+    ; first, we check if we've reached the end of our dictionary chain, which
+    ; would be a null pointer at the first definition
+    %is_null = icmp eq %WORD* %currDictWord.ptr, null
     br i1 %is_null, label %notFound, label %checkWord
 checkWord:
-    %dictWord.wordStringPtrPtr = getelementptr %WORD* %currDictWord, i32 0, i32 2
-    %dictWord.wordStringPtr = load i8** %dictWord.wordStringPtrPtr
+    ; reset our word character index to 0 as we're checking a new definition
     store i32 0, i32* %charIdx.ptr
+
+    ; grab the pointer to the string representation of our current dict entry
+    %dictWord.wordString.ptr.ptr = getelementptr %WORD* %currDictWord.ptr,
+                                                 i32 0, i32 2
+    %dictWord.wordString.ptr = load i8** %dictWord.wordString.ptr.ptr
+
+    ; begin our string comparison block
     br label %compChar
 compChar:
     %charIdx.value = load i32* %charIdx.ptr
-    %dict.charPtr = getelementptr i8* %dictWord.wordStringPtr, i32 %charIdx.value
-    %dict.char = load i8* %dict.charPtr
+    ; set up our current character from the dictionary word string
+    %dict.char.ptr = getelementptr i8* %dictWord.wordString.ptr,
+                                   i32 %charIdx.value
+    %dict.char = load i8* %dict.char.ptr
+    ; set up our current character from the target string we're working with
+    %wstr.char.ptr = getelementptr i8* %wordString,
+                                   i32 %charIdx.value
+    %wstr.char = load i8* %wstr.char.ptr
+
+    ; show the user the current characters we're looking at
     ;call void @printTwoString( i8* %dictString.i8.ptr, i8* %dict.charPtr )
-    %dict.is_null = icmp eq i8 %dict.char, 0
-    %wstr.charPtr = getelementptr i8* %wordString, i32 %charIdx.value
-    %wstr.char = load i8* %wstr.charPtr
-    %wstr.is_null = icmp eq i8 %wstr.char, 0
     ;call void @printTwoString( i8* %tokenString.i8.ptr, i8* %wstr.charPtr )
-    %is_match = and i1 %dict.is_null, %wstr.is_null
-    br i1 %is_match, label %foundDefn, label %checkNull
+
+    ; check if we're looking at a null terminator in either case
+    %dict.is_null.flag = icmp eq i8 %dict.char, 0
+    %wstr.is_null.flag = icmp eq i8 %wstr.char, 0
+
+    ; if both are null characters, we've hit the end of both strings without
+    ; a mismatch and have successfully found a match
+    %is_match.flag = and i1 %dict.is_null.flag, %wstr.is_null.flag
+    br i1 %is_match.flag, label %foundDefn, label %checkNull
 checkNull:
-    %hit_null = or i1 %dict.is_null, %wstr.is_null
-    br i1 %hit_null, label %notFound, label %checkChar
+    ; if either and not both are null characters, we've reached the end of one
+    ; string -- the beginning is a substring of the other, but it's not a match
+    %hit_null.flag = or i1 %dict.is_null.flag, %wstr.is_null.flag
+    br i1 %hit_null.flag, label %nextWord, label %checkChar
 checkChar:
-    %is_same = icmp eq i8 %wstr.char, %dict.char
-    br i1 %is_same, label %nextChar, label %nextWord
+    ; then finally, we check if the two characters are the same; if not, we
+    ; abandon the current definition, and advance to the next word in the
+    ; dictionary. if they are the same, we move on to the next character
+    %is_same.flag = icmp eq i8 %wstr.char, %dict.char
+    br i1 %is_same.flag, label %nextChar, label %nextWord
 nextChar:
+    ; increment the character index and start our loop again
     %newCharIdx.value = add i32 %charIdx.value, 1
     store i32 %newCharIdx.value, i32* %charIdx.ptr
     br label %compChar
 nextWord:
-    %nextDictWord.ptr.ptr = getelementptr %WORD* %currDictWord, i32 0, i32 0
+    ; advance to the next word by looking up the current word's pointer to
+    ; the next
+    %nextDictWord.ptr.ptr = getelementptr %WORD* %currDictWord.ptr,
+                                          i32 0, i32 0
     %nextDictWord.ptr = load %WORD** %nextDictWord.ptr.ptr
-    %is_next_null = icmp eq %WORD* %nextDictWord.ptr, null
-    br i1 %is_next_null, label %notFound, label %finishSetup
-finishSetup:
-    %nextDictWord = load %WORD* %nextDictWord.ptr
-    store %WORD %nextDictWord, %WORD* %currDictWord
+
+    ; we check if the next word's pointer is null -- if it is, we've reached
+    ; the end of the dictionary with no match
+    %is_next_null.flag = icmp eq %WORD* %nextDictWord.ptr, null
+    br i1 %is_next_null.flag, label %notFound, label %finishNextWord
+finishNextWord:
+    ; grab the next word and copy it into our current working word
+    %nextDictWord.value = load %WORD* %nextDictWord.ptr
+    store %WORD %nextDictWord.value, %WORD* %currDictWord.ptr
+    ; begin the loop all over again
     br label %begin
 foundDefn:
-    %forthFn.ptr = getelementptr %WORD* %currDictWord, i32 0, i32 1
-    %forthFn = load %FNPTR* %forthFn.ptr
-    ret %FNPTR %forthFn
+    ; get the pointer to our function and return it to the caller
+    %forthFn.ptr.ptr = getelementptr %WORD* %currDictWord.ptr, i32 0, i32 1
+    %forthFn.ptr = load %FNPTR* %forthFn.ptr.ptr
+    ret %FNPTR %forthFn.ptr
 notFound:
+    ; we didn't find anything, so we return null
     ret %FNPTR null
 }
 
