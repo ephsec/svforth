@@ -24,11 +24,19 @@ declare void @llvm.memcpy.p0i8.p0i8.i32(i8*, i8*, i32, i32, i1)
 @twoWordString =  internal constant [8 x i8] c"%s %s\0D\0A\00"
 @dictString = internal constant [6 x i8] c"DICT:\00"
 @tokenString = internal constant [7 x i8] c"TOKEN:\00"
+@literalString = internal constant [9 x i8] c"LITERAL:\00"
 @compiledString = internal constant [10 x i8] c"COMPILED:\00"
 @charString = internal constant [6 x i8] c"CHAR:\00"
 @progOutString = internal constant  [9 x i8] c"PROGRAM:\00"
 @dictNavString = internal constant [15 x i8] c"--> %s (%llu) \00"
 @newlineString = internal constant [3 x i8] c"\0D\0A\00"
+
+define void @printValue8(i8 %value) {
+    %string = getelementptr [7 x i8]* @valueString, i32 0, i32 0
+    %printf_ret = call i32 (i8*, ... )* @printf(i8* %string, i8 %value)
+    ret void
+}
+
 
 define void @printValue32(i32 %value) {
     %string = getelementptr [7 x i8]* @valueString, i32 0, i32 0
@@ -93,7 +101,7 @@ define void @outputNewLine() {
 @str_div =       internal constant [ 2 x i8 ] c"/\00"
 
 ; * test forth program
-@str_testProgram = internal constant [ 14 x i8 ] c"dup + swap .s\00"
+@str_testProgram = internal constant [ 21 x i8 ] c"99 2 3 dup + swap .s\00"
 
 ; **** heap access and manipulation functions
 define %pntr @getHeap_ptr(%int %index) {
@@ -120,9 +128,15 @@ define void @insertToken(%int %index, void ()* %token) {
     %insPtr = call %pntr @getHeap_ptr(%int %index)
     %tokenPtrInt = ptrtoint void ()* %token to %int
     call void @putHeap(%int %index, %int %tokenPtrInt)
-    ;call void @printValue64(%int %tokenPtrInt)
     ret void
 }
+
+define void @insertLiteral(%int %index, %int %value) {
+    %insPtr = call %pntr @getHeap_ptr(%int %index)
+    call void @putHeap(%int %index, %int %value)
+    ret void
+}
+
 
 ; **** stack manipulation functions
 define void @pushStack(%int %value) {
@@ -416,6 +430,8 @@ define void @compile(i8* %programString.ptr, %int %heapIdx.value) {
     %compiledString.ptr = getelementptr [10 x i8]* @compiledString, i32 0, i32 0
     ; c"CHAR:\00"
     %charString.ptr = getelementptr [6 x i8]* @charString, i32 0, i32 0
+    ; c"LITERAL:\00"
+    %literalString.ptr = getelementptr [9 x i8]* @literalString, i32 0, i32 0
 
     %progStrIdx.ptr = alloca i32        ; where we are in the program string
     %beginCurrToken.ptr = alloca i32    ; where the current token begins
@@ -503,18 +519,19 @@ handleToken:
                                       i32 %tokenLength.value
     store i8 00, i8* %nullLocation.ptr
 
-    call void @printTwoString(i8* %charString.ptr, i8* %currToken.ptr)
+    ; call void @printTwoString(i8* %charString.ptr, i8* %currToken.ptr)
 
     ; lookup our token in the dictionary
     %forthFn.ptr = call void ()* (i8*)* @lookupDictionary(i8* %currToken.ptr)
 
-    ; check if we have a function pointer, or a null pointer
-    %is_fnPtr_null = icmp eq %FNPTR %forthFn.ptr, null
-    br i1 %is_fnPtr_null, label %advanceIdx, label %insertFn
-
-insertFn:
+    ; load our current heap index for inserting a pointer or a literal
     %currHeapIdx.value = load %int* %currHeapIdx.ptr
 
+    ; check if we have a function pointer, or a null pointer
+    %is_fnPtr_null = icmp eq %FNPTR %forthFn.ptr, null
+    br i1 %is_fnPtr_null, label %checkLiteral, label %insertFn
+
+insertFn:
     ; insert our function pointer into our heap
     call void @insertToken(%int %currHeapIdx.value, %FNPTR %forthFn.ptr)
 
@@ -528,6 +545,84 @@ insertFn:
     ; all done with the token, let's move on
     br label %advanceIdx
 
+checkLiteral:
+    ; our current token was not found on the dictionary, so we interpret it
+    ; as a literal, insert LIT pointer into our execution stream and then
+    ; insert the literal there
+    call void @insertToken(%int %currHeapIdx.value, %FNPTR @LIT)
+    %newHeapIdx.value.checkLiteral = add %int %currHeapIdx.value, 1
+
+    ; set up values for our literal parser
+    %literalInt.ptr = alloca %int
+    store %int 0, %pntr %literalInt.ptr
+    %tokenIdx.ptr = alloca %int
+    %currDigit.ptr = alloca %int
+    store %int 0, %pntr %currDigit.ptr
+
+    ; initialize our positional multiplier with 1, the first rightmost digit
+    %posMultiplier.ptr = alloca %int
+    store %int 1, %pntr %posMultiplier.ptr
+
+    ; we scan our literal right to left, so set our pointer to the end
+    %tokenLength.value.int = zext i32 %tokenLength.value to %int
+    %newTokenIdx.value = sub %int %tokenLength.value.int, 1
+    store %int %newTokenIdx.value, %pntr %tokenIdx.ptr
+
+    br label %literalLoop
+
+literalLoop:
+    %tokenIdx.value = load %pntr %tokenIdx.ptr
+    %litChr.ptr = getelementptr i8* %currToken.ptr, %int %tokenIdx.value
+    %litChr.value = load i8* %litChr.ptr
+
+    ; 0-9 is ASCII 48-57 -- check if we are within this
+    %is_less.flag = icmp ult i8 %litChr.value, 48
+    %is_more.flag = icmp ugt i8 %litChr.value, 57
+    %is_outside.flag = or i1 %is_less.flag, %is_more.flag
+    br i1 %is_outside.flag, label %invalidLiteral, label %validChar
+
+validChar:
+    ; we're within ASCII range 48-57, so subtract 48 to get our digit
+    %digit.value = sub i8 %litChr.value, 48
+    %digit.value.int = zext i8 %digit.value to %int
+
+    ; get our current positional multiplier and multiply our digit by that
+    %posMultiplier.value = load %pntr %posMultiplier.ptr
+    %posValue.value = mul %int %digit.value.int, %posMultiplier.value
+
+    ; add our positioned digit to our current running total
+    %literalInt.value = load %pntr %literalInt.ptr
+    %newLiteralInt.value = add %int %literalInt.value, %posValue.value
+    store %int %newLiteralInt.value, %pntr %literalInt.ptr
+
+    ; if we're at the leftmost digit, we're done
+    %is_done.flag = icmp eq %int %tokenIdx.value, 0
+    br i1 %is_done.flag, label %insertLiteral, label %nextLitChr
+
+nextLitChr:
+    ; increase our multiplier with the new digit, multiplying by 10
+    %newPosMultiplier.value = mul %int %posMultiplier.value, 10
+    store %int %newPosMultiplier.value, %pntr %posMultiplier.ptr
+
+    %nextLiteralIdx.value = sub %int %tokenIdx.value, 1
+    store %int %nextLiteralIdx.value, %pntr %tokenIdx.ptr
+    br label %literalLoop
+
+insertLiteral:
+    ; Now that we have our constructed literal, insert it into the heap
+    call void @insertLiteral(%int %newHeapIdx.value.checkLiteral,
+                             %int %newLiteralInt.value)
+
+    ; report our new literal to the user
+    call void @printTwoString(i8* %literalString.ptr, i8* %currToken.ptr)
+
+
+    ; Finally, increment and store our current heap pointer.
+    %newHeapIdx.value.insertLiteral = add %int %newHeapIdx.value.checkLiteral, 1
+    store %int %newHeapIdx.value.insertLiteral, %pntr %currHeapIdx.ptr
+
+    br label %advanceIdx
+
 advanceIdx:
     ; advance past the space we're hovering over at present
     %nextProgStrIdx.value.handleToken = add i32 %progStrIdx.value.handleToken, 1
@@ -535,6 +630,9 @@ advanceIdx:
 
     ; begin all over again
     br label %beginToken
+
+invalidLiteral:
+    ret void
 
 done:
     ret void
@@ -592,7 +690,17 @@ done:
 ; here be FORTH words now
 ; *****************************************************************************
 
-define void @SWAP() {
+define void @LIT() noreturn {
+    %execIdx.value = load %pntr @execIdx
+    %ahead.value = call %cell @getHeap(%int %execIdx.value)
+    call void @pushStack(%cell %ahead.value)
+    %execIdxIncr.value = add %int %execIdx.value, 1
+    store %int %execIdxIncr.value, %pntr @execIdx
+    call void @next()
+    ret void
+}
+
+define void @SWAP() noreturn {
     %first = call %cell @popStack()
     %second = call %cell @popStack()
     call void @pushStack(%cell %first)
@@ -601,14 +709,14 @@ define void @SWAP() {
     ret void
 }
 
-define void @DUP() {
+define void @DUP() noreturn {
     %first = call %cell @getTopStack()
     call void @pushStack(%cell %first)
     call void @next()
     ret void
 }
 
-define void @ADD() {
+define void @ADD() noreturn {
     %first = call %cell @popStack()
     %second = call %cell @popStack()
     %result = add %cell %first, %second
@@ -617,7 +725,7 @@ define void @ADD() {
     ret void
 }
 
-define void @SUB() {
+define void @SUB() noreturn {
     %first = call %cell @popStack()
     %second = call %cell @popStack()
     %result = sub %cell %second, %first
@@ -626,7 +734,7 @@ define void @SUB() {
     ret void
 }
 
-define void @MUL() {
+define void @MUL() noreturn {
     %first = call %cell @popStack()
     %second = call %cell @popStack()
     %result = mul %cell %first, %second
@@ -635,7 +743,7 @@ define void @MUL() {
     ret void
 }
 
-define void @DIV() {
+define void @DIV() noreturn {
     %first = call %cell @popStack()
     %second = call %cell @popStack()
     %result = udiv %cell %second, %first
@@ -644,7 +752,7 @@ define void @DIV() {
     ret void
 }
 
-define void @DISPSTACK() {
+define void @DISPSTACK() noreturn {
     call void @showStack()
     call void @next()
     ret void
@@ -672,11 +780,6 @@ define %int @main() {
 
     ; store the pointer to our heap in a global value
     store %pntr %heapPtr, %pntr* @heapPtr
-
-    ; push 1, 2, 3 onto the stack
-    call void @pushStack(%int 1)
-    call void @pushStack(%int 2)
-    call void @pushStack(%int 3)
 
     ; .s - @DISPSTACK
     %ptr_dispStack = getelementptr [ 3 x i8 ]* @str_dispStack, i32 0
@@ -738,8 +841,8 @@ define %int @main() {
     call void @printDictionary()
 
     ; ** compile our forth program
-    %ptr_testProgram = getelementptr[ 14 x i8 ]* @str_testProgram, i32 0
-    %i8_testProgram = bitcast [ 14 x i8 ]* %ptr_testProgram to i8*
+    %ptr_testProgram = getelementptr[ 21 x i8 ]* @str_testProgram, i32 0
+    %i8_testProgram = bitcast [ 21 x i8 ]* %ptr_testProgram to i8*
     call void @compile(i8* %i8_testProgram, %int 0)
 
     ; ** and finally, execute our program
