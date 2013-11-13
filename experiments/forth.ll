@@ -1,7 +1,6 @@
 %pntr = type i64*
 %int = type i64
 %cell = type i64
-;%WORD = type void ()*
 
 %FNPTR = type void ()*
 %WORD = type { %WORD*, %FNPTR, i8* }
@@ -15,8 +14,6 @@ declare i32 @read(%int, i8*, %int)
 declare i32 @printf(i8*, ... )
 declare void @llvm.memcpy.p0i8.p0i8.i32(i8*, i8*, i32, i32, i1)
 
-
-
 ; *****************************************************************************
 ; for ease of debugging, allows us to print a value to stdout
 ; *****************************************************************************
@@ -27,7 +24,9 @@ declare void @llvm.memcpy.p0i8.p0i8.i32(i8*, i8*, i32, i32, i1)
 @twoWordString =  internal constant [8 x i8] c"%s %s\0D\0A\00"
 @dictString = internal constant [6 x i8] c"DICT:\00"
 @tokenString = internal constant [7 x i8] c"TOKEN:\00"
-
+@compiledString = internal constant [10 x i8] c"COMPILED:\00"
+@dictNavString = internal constant [15 x i8] c"--> %s (%llu) \00"
+@newlineString = internal constant [3 x i8] c"\0D\0A\00"
 
 define void @printValue32(i32 %value) {
 	%string = getelementptr [7 x i8]* @valueString, i32 0, i32 0
@@ -66,6 +65,11 @@ define void @printTwoString(i8* %value, i8* %value2) {
 	ret void
 }
 
+define void @outputNewLine() {
+	%string = getelementptr [3 x i8]* @newlineString, i32 0, i32 0
+	%printf_ret = call i32 (i8*, ... )* @printf(i8* %string)
+	ret void
+}
 
 ; *****************************************************************************
 ; globals used for Forth heap, execution and stack
@@ -114,7 +118,7 @@ define void @insertToken(%int %index, void ()* %token) {
 	%insPtr = call %pntr @getHeap_ptr(%int %index)
 	%tokenPtrInt = ptrtoint void ()* %token to %int
 	call void @putHeap(%int %index, %int %tokenPtrInt)
-
+	;call void @printValue64(%int %tokenPtrInt)
 	ret void
 }
 
@@ -203,7 +207,7 @@ define void @registerDictionary(i8* %wordString, %WORD* %newDictEntry,
 
 define void @printDictionary() {
 	%dictPtr = load %WORD** @dictPtr
-
+	%dictNavString.ptr = getelementptr [15 x i8]* @dictNavString, i32 0, i32 0
 	%dictWord.ptr = getelementptr %WORD* %dictPtr, i32 0
 	%dictWord = load %WORD* %dictWord.ptr
 	%currWord.ptr = alloca %WORD
@@ -215,15 +219,29 @@ begin:
 	%is_null = icmp eq %WORD* %currWord.ptr, null
 	br i1 %is_null, label %done, label %printWord
 printWord:
-	%currWord.wordString.ptr.ptr = getelementptr %WORD* %currWord.ptr, i32 0, i32 2
+	%currWord.wordString.ptr.ptr = getelementptr %WORD* %currWord.ptr,
+												        i32 0, i32 2
 	%currWord.wordString.ptr = load i8** %currWord.wordString.ptr.ptr
-	call void @printString( i8* %currWord.wordString.ptr )
+	%forthFn.ptr.ptr = getelementptr %WORD* %currWord.ptr, i32 0, i32 1
+	%forthFn.ptr = load void()** %forthFn.ptr.ptr
+	%forthFn.ptr.int = ptrtoint void()* %forthFn.ptr to i64
+
+	; print our pretty dictionary order
+	%printf_ret = call i32 (i8*, ... )* @printf(i8* %dictNavString.ptr,
+											    i8* %currWord.wordString.ptr,
+		                                        i64 %forthFn.ptr.int)
+
+	; advance to the definition now word now
 	%nextWord.ptr.ptr = getelementptr %WORD* %currWord.ptr, i32 0, i32 0
 	%nextWord.ptr = load %WORD** %nextWord.ptr.ptr
+	%is_next_null = icmp eq %WORD* %nextWord.ptr, null
+	br i1 %is_next_null, label %done, label %continueSetup
+continueSetup:
 	%nextWord = load %WORD* %nextWord.ptr
 	store %WORD %nextWord, %WORD* %currWord.ptr
 	br label %begin
 done:
+	call void @outputNewLine()
 	ret void
 
 }
@@ -286,7 +304,6 @@ finishSetup:
 	store %WORD %nextDictWord, %WORD* %currDictWord
 	br label %begin
 foundDefn:
-	call void @printString( i8* %dictWord.wordStringPtr )
 	%forthFn.ptr = getelementptr %WORD* %currDictWord, i32 0, i32 1
 	%forthFn = load %FNPTR* %forthFn.ptr
 	ret %FNPTR %forthFn
@@ -296,11 +313,15 @@ notFound:
 
 ; *** compiler functions
 define void @compile(i8* %programString, %int %heapIdx) {
+	%compiledString = getelementptr [10 x i8]* @compiledString, i32 0, i32 0
+
 	%progStrIdx = alloca i32
 	%beginCurrToken = alloca i32
 	%currChrPtr = alloca i8
+	%currHeapIdx.ptr = alloca %int
 
 	store i32 0, i32* %progStrIdx
+	store %int %heapIdx, %int* %currHeapIdx.ptr
 
 	br label %beginToken
 
@@ -372,6 +393,23 @@ handleToken:
 	; lookup our token
 	%forthFn = call void ()* (i8*)* @lookupDictionary(i8* %currToken)
 
+	%is_fnPtr_null = icmp eq %FNPTR %forthFn, null
+	br i1 %is_fnPtr_null, label %advanceIdx, label %insertFn
+
+insertFn:
+	%currHeapIdx.value = load %int* %currHeapIdx.ptr
+
+	; insert our function pointer into our heap
+	call void @insertToken( %int %currHeapIdx.value, %FNPTR %forthFn )
+
+	%newHeapIdx = add %int %currHeapIdx.value, 1
+	store %int %newHeapIdx, %int* %currHeapIdx.ptr
+
+	call void @printTwoString( i8* %compiledString, i8* %currToken )
+
+	br label %advanceIdx
+
+advanceIdx:
 	; advance past the space we're hovering over at present
 	%newProgStrIdx_handleToken = add i32 %progStrIdxValue_handleToken, 1
 	store i32 %newProgStrIdx_handleToken, i32* %progStrIdx
@@ -577,16 +615,15 @@ define %int @main() {
 								   %FNPTR @DUP )
 
 	; ** test our dictionary navigation
-	;call void @printDictionary()
+	call void @printDictionary()
 
 	; ** compile our forth program
 	%ptr_testProgram = getelementptr[ 14 x i8 ]* @str_testProgram, i32 0
 	%i8_testProgram = bitcast [ 14 x i8 ]* %ptr_testProgram to i8*
-	call void @compile( i8* %i8_testProgram, %int 0)
+	call void @compile(i8* %i8_testProgram, %int 0)
 
-
-
-
+	; ** and finally, execute our program
+	call void @next()
 
 	ret %int 0
 }
