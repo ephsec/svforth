@@ -605,7 +605,7 @@ insertFn:
     call void @printTwoString(i8* %compiledString.ptr, i8* %currToken.ptr)
 
     ; all done with the token, let's move on
-    br label %advanceIdx
+    br label %checkTokenEndNull
 
 checkLiteral:
     ; our current token was not found on the dictionary, so we interpret it
@@ -684,12 +684,22 @@ insertLiteral:
     %storeHeapIdx.value = add %int %newHeapIdx.value.insertLiteral, 1
     store %int %storeHeapIdx.value, %pntr %currHeapIdx.ptr
 
-    br label %advanceIdx
+    br label %checkTokenEndNull
+
+checkTokenEndNull:
+    ; we check if the terminator on our current token is null, as that'stack
+    ; a string and compilation ending moment as well
+    %endTokenChr.ptr = getelementptr i8* %programString.ptr,
+                                    i32 %progStrIdx.value.handleToken
+    %endTokenChr.value = load i8* %endTokenChr.ptr
+    %is_chr_null.flag = icmp eq i8 %endTokenChr.value, 0
+
+    br i1 %is_chr_null.flag, label %done, label %advanceIdx
 
 advanceIdx:
     ; advance past the space we're hovering over at present
-    %nextProgStrIdx.value.handleToken = add i32 %progStrIdx.value.handleToken, 1
-    store i32 %nextProgStrIdx.value.handleToken, i32* %progStrIdx.ptr
+    %nextProgStrIdx.value.advanceIdx = add i32 %progStrIdx.value.handleToken, 1
+    store i32 %nextProgStrIdx.value.advanceIdx, i32* %progStrIdx.ptr
 
     ; begin all over again
     br label %beginToken
@@ -700,6 +710,9 @@ invalidLiteral:
 
 done:
     %currHeapIdx.value.done = load %pntr %currHeapIdx.ptr
+    ;%nullIdx.value = sub %int %currHeapIdx.value.done, 1
+
+    call void @printValueInt( %int %currHeapIdx.value.done )
 
     ; clean up by terminating our compiled output with a null byte
     call void @insertLiteral(%int %currHeapIdx.value.done,
