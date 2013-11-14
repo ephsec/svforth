@@ -1,6 +1,7 @@
 %pntr = type i64*
 %int = type i64
 %cell = type i64
+%strbuf = type i8*
 
 %FNPTR = type void ()*
 %WORD = type { %WORD*, %FNPTR, i8* }
@@ -22,7 +23,8 @@ declare void @llvm.memcpy.p0i8.p0i8.i32(i8*, i8*, i32, i32, i1)
 @valueString = internal constant    [7 x i8]  c"%llu\0D\0A\00"
 @stackString = internal constant    [13 x i8] c"%llu: %llu\0D\0A\00"
 @wordString =  internal constant    [5 x i8]  c"%s\0D\0A\00"
-@twoWordString =  internal constant [8 x i8]  c"%s %s\0D\0A\00"
+@twoWordString = internal constant  [8 x i8]  c"%s %s\0D\0A\00"
+@execString = internal constant     [6 x i8]  c"EXEC:\00"
 @dictString = internal constant     [6 x i8]  c"DICT:\00"
 @tokenString = internal constant    [7 x i8]  c"TOKEN:\00"
 @literalString = internal constant  [9 x i8]  c"LITERAL:\00"
@@ -101,6 +103,7 @@ define void @outputNewLine() {
 @str_sub =       internal constant [ 2 x i8 ] c"-\00"
 @str_mul =       internal constant [ 2 x i8 ] c"*\00"
 @str_div =       internal constant [ 2 x i8 ] c"/\00"
+@str_lit =       internal constant [ 5 x i8 ] c"_lit\00"
 
 ; * test forth program
 @str_testProgram = internal constant [ 21 x i8 ] c"99 2 3 dup + swap .s\00"
@@ -190,12 +193,18 @@ define %int @nextExec() {
 }
 
 define void @next() {
+    ; c"EXEC:"
+    %execString = getelementptr [6 x i8]* @execString, i32 0, i32 0
+
     %ins = call %int @nextExec()
 
     %is_done = icmp eq %int %ins, 0
     br i1 %is_done, label %done, label %execIns
 
 execIns:
+    %currToken = call %strbuf @lookupFn(%int %ins)
+    call void @printTwoString(%strbuf %execString, %strbuf %currToken)
+
     %functionPtr = inttoptr %int %ins to void ()*
     call void %functionPtr()
     ret void    
@@ -318,6 +327,58 @@ done:
     ret void
 
 }
+
+define %strbuf @lookupFn(%int %fnPntr.value) {
+    ; setup with the tail end of our dictionary
+    %tailDictPtr.ptr = load %WORD** @dictPtr
+    %dictWord.ptr = getelementptr %WORD* %tailDictPtr.ptr, i32 0
+    %dictWord.value = load %WORD* %dictWord.ptr
+
+    ; copy our current dictWord into a local working space
+    %currDictWord.ptr = alloca %WORD
+    store %WORD %dictWord.value, %WORD* %currDictWord.ptr
+
+    br label %begin
+
+begin:
+    ; first, we check if we've reached the end of our dictionary chain, which
+    ; would be a null pointer at the first definition
+    %is_null = icmp eq %WORD* %currDictWord.ptr, null
+    br i1 %is_null, label %notFound, label %checkWord
+checkWord:
+    %currFn.ptr.ptr = getelementptr %WORD* %currDictWord.ptr, i32 0, i32 1
+    %currFn.ptr = load void()** %currFn.ptr.ptr
+    %currFn.ptr.value = ptrtoint void()* %currFn.ptr to %int
+
+    %is_fn.flag = icmp eq %int %fnPntr.value, %currFn.ptr.value
+    br i1 %is_fn.flag, label %returnFnString, label %nextFn
+nextFn:
+    ; advance to the next word by looking up the current word's pointer to
+    ; the next
+    %nextDictWord.ptr.ptr = getelementptr %WORD* %currDictWord.ptr,
+                                          i32 0, i32 0
+    %nextDictWord.ptr = load %WORD** %nextDictWord.ptr.ptr
+
+    ; we check if the next word's pointer is null -- if it is, we've reached
+    ; the end of the dictionary with no match
+    %is_next_null.flag = icmp eq %WORD* %nextDictWord.ptr, null
+    br i1 %is_next_null.flag, label %notFound, label %finishNextFn
+finishNextFn:
+    ; grab the next word and copy it into our current working word
+    %nextDictWord.value = load %WORD* %nextDictWord.ptr
+    store %WORD %nextDictWord.value, %WORD* %currDictWord.ptr
+    ; begin the loop all over again
+    br label %begin
+returnFnString:
+    ; derefernce our current word pointer and then our string
+    %currDictWord.wordString.ptr.ptr = getelementptr %WORD* %currDictWord.ptr,
+                                                        i32 0, i32 2
+    %currDictWord.wordString.ptr = load i8** %currDictWord.wordString.ptr.ptr
+
+    ret %strbuf %currDictWord.wordString.ptr
+notFound:
+    ret %strbuf null
+} 
 
 define %FNPTR @lookupDictionary(i8* %wordString) {
     ; c"TOKEN:\00"
@@ -550,8 +611,6 @@ checkLiteral:
     ; our current token was not found on the dictionary, so we interpret it
     ; as a literal, insert LIT pointer into our execution stream and then
     ; insert the literal there
-    call void @insertToken(%int %currHeapIdx.value, %FNPTR @LIT)
-    %newHeapIdx.value.checkLiteral = add %int %currHeapIdx.value, 1
 
     ; set up values for our literal parser
     %literalInt.ptr = alloca %int
@@ -610,17 +669,20 @@ nextLitChr:
     br label %literalLoop
 
 insertLiteral:
+    ; insert our _LIT function into the heap
+    call void @insertToken(%int %currHeapIdx.value, %FNPTR @LIT)
+    %newHeapIdx.value.insertLiteral = add %int %currHeapIdx.value, 1
+
     ; Now that we have our constructed literal, insert it into the heap
-    call void @insertLiteral(%int %newHeapIdx.value.checkLiteral,
+    call void @insertLiteral(%int %newHeapIdx.value.insertLiteral,
                              %int %newLiteralInt.value)
 
     ; report our new literal to the user
     call void @printTwoString(i8* %literalString.ptr, i8* %currToken.ptr)
 
-
     ; Finally, increment and store our current heap pointer.
-    %newHeapIdx.value.insertLiteral = add %int %newHeapIdx.value.checkLiteral, 1
-    store %int %newHeapIdx.value.insertLiteral, %pntr %currHeapIdx.ptr
+    %storeHeapIdx.value = add %int %newHeapIdx.value.insertLiteral, 1
+    store %int %storeHeapIdx.value, %pntr %currHeapIdx.ptr
 
     br label %advanceIdx
 
@@ -633,14 +695,15 @@ advanceIdx:
     br label %beginToken
 
 invalidLiteral:
-    ret void
+    ;call void @printValueInt(%int 9999999)
+    br label %done
 
 done:
     %currHeapIdx.value.done = load %pntr %currHeapIdx.ptr
 
     ; clean up by terminating our compiled output with a null byte
     call void @insertLiteral(%int %currHeapIdx.value.done,
-                             %int 0)
+                             %int 00)
 
     ret void
 }
@@ -768,12 +831,18 @@ define void @DISPSTACK() noreturn {
 ; *****************************************************************************
 
 define void @repl() {
+    %promptString.ptr = getelementptr [5 x i8]* @promptString, i32 0, i32 0
+
     %currChr.ptr = alloca i8
     %inputBuffer.ptr = alloca i8, i16 1024
     %inputBufferIdx.ptr = alloca i16
     store i8 0, i8* %currChr.ptr
     store i16 0, i16* %inputBufferIdx.ptr
 
+    br label %prompt
+
+prompt:
+    call void @printString( i8* %promptString.ptr )
     br label %inputLoop
 
 inputLoop:
@@ -811,7 +880,7 @@ execBuffer:
     ; reset our input buffer pointer to 0
     store i16 0, i16* %inputBufferIdx.ptr
 
-    br label %inputLoop
+    br label %prompt
 
     ret void
 }
@@ -878,6 +947,14 @@ define %int @main() {
     call void @registerDictionary( i8* %i8_add,  
                                    %WORD* %dictEntry.add,
                                    %FNPTR @ADD )
+
+    ; _lit - @LIT
+    %ptr_lit = getelementptr [ 5 x i8 ]* @str_lit, i32 0
+    %i8_lit = bitcast [ 5 x i8 ]* %ptr_lit to i8*
+    %dictEntry.lit = alloca %WORD
+    call void @registerDictionary( i8* %i8_lit,  
+                                   %WORD* %dictEntry.lit,
+                                   %FNPTR @LIT )
 
     ; swap - @SWAP
     %ptr_swap = getelementptr [ 5 x i8 ]* @str_swap, i32 0
