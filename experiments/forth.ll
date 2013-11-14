@@ -109,7 +109,7 @@ define void @outputNewLine() {
 @str_testProgram = internal constant [ 21 x i8 ] c"99 2 3 dup + swap .s\00"
 
 ; **** heap access and manipulation functions
-define %pntr @getHeap_ptr(%int %index) {
+define fastcc %pntr @getHeap_ptr(%int %index) {
     ; load our heap pointer, which is stored as a pointer
     %heapPtr = load %pntr* @heapPtr
     ; retrieve and return our value pointer
@@ -117,50 +117,50 @@ define %pntr @getHeap_ptr(%int %index) {
     ret %pntr %valuePtr
 }
 
-define %int @getHeap(%int %index) {
-    %valuePtr = call %pntr @getHeap_ptr(%int %index)
+define fastcc %int @getHeap(%int %index) {
+    %valuePtr = call fastcc %pntr @getHeap_ptr(%int %index)
     %value = load %pntr %valuePtr
     ret %int %value
 }
 
-define void @putHeap(%int %index, %int %value) {
-    %valuePtr = call %pntr @getHeap_ptr(%int %index)
+define fastcc void @putHeap(%int %index, %int %value) {
+    %valuePtr = call fastcc %pntr @getHeap_ptr(%int %index)
     store %int %value, %pntr %valuePtr
     ret void
 }
 
-define void @insertToken(%int %index, void ()* %token) {
-    %insPtr = call %pntr @getHeap_ptr(%int %index)
+define fastcc void @insertToken(%int %index, void ()* %token) {
+    %insPtr = call fastcc %pntr @getHeap_ptr(%int %index)
     %tokenPtrInt = ptrtoint void ()* %token to %int
-    call void @putHeap(%int %index, %int %tokenPtrInt)
+    call fastcc void @putHeap(%int %index, %int %tokenPtrInt)
     ret void
 }
 
-define void @insertLiteral(%int %index, %int %value) {
-    %insPtr = call %pntr @getHeap_ptr(%int %index)
-    call void @putHeap(%int %index, %int %value)
+define fastcc void @insertLiteral(%int %index, %int %value) {
+    %insPtr = call fastcc %pntr @getHeap_ptr(%int %index)
+    call fastcc void @putHeap(%int %index, %int %value)
     ret void
 }
 
 ; **** stack manipulation functions
-define void @pushStack(%int %value) {
+define fastcc void @pushStack(%int %value) {
     ; load our stack pointer which is stored as an int32, relative to @heapPtr
     %stackIdx = load %pntr @stackIdx
     ; decrement our stack pointer, as our stack is right to left from the end
     ; of the heap
     %newStackIdx = sub %int %stackIdx, 1
     ; store our value at our stack location
-    call void @putHeap(%int %newStackIdx, %int %value)
+    call fastcc void @putHeap(%int %newStackIdx, %int %value)
     ; store our new current stack index
     store %int %newStackIdx, %pntr @stackIdx
     ret void
 }
 
-define %cell @popStack() {
+define fastcc %cell @popStack() {
     ; load our stack pointer which is stored as an int32, relative to @heapPtr
     %stackIdx = load %pntr @stackIdx
     ; grab our value to return from the stack
-    %value = call %cell @getHeap(%int %stackIdx)
+    %value = call fastcc %cell @getHeap(%int %stackIdx)
     ; increment our stack pointer, moving it to the right
     %newStackIdx = add %int %stackIdx, 1
     ; store our new current stack index
@@ -169,11 +169,11 @@ define %cell @popStack() {
     ret %cell %value
 }
 
-define %cell @getTopStack() {
+define fastcc %cell @getTopStack() {
     ; load our stack pointer which is stored as an int32, relative to @heapPtr
     %stackIdx = load %pntr @stackIdx
     ; grab our value to return from the stack
-    %value = call %int @getHeap(%int %stackIdx)
+    %value = call fastcc %int @getHeap(%int %stackIdx)
     ; finally, return the value we popped off the stack
     ret %cell %value
 }
@@ -184,7 +184,7 @@ define %int @nextExec() {
     %execIdx = load %pntr @execIdx
     ; dereference our heap pointer and point at the element under the %execIdx
     ; indice
-    %ins = call %int @getHeap(%int %execIdx)
+    %ins = call fastcc %int @getHeap(%int %execIdx)
     ; increment our instruction pointer and store it
     %nextExec = add %int %execIdx, 1
     store %int %nextExec, %pntr @execIdx
@@ -192,18 +192,17 @@ define %int @nextExec() {
     ret %int %ins
 }
 
-define void @next() {
+define fastcc void @next() {
     ; c"EXEC:"
     %execString = getelementptr [6 x i8]* @execString, i32 0, i32 0
 
     %ins = call %int @nextExec()
-
     %is_done = icmp eq %int %ins, 0
     br i1 %is_done, label %done, label %execIns
 
 execIns:
-    %currToken = call %strbuf @lookupFn(%int %ins)
-    call void @printTwoString(%strbuf %execString, %strbuf %currToken)
+    ;%currToken = call %strbuf @lookupFn(%int %ins)
+    ;call void @printTwoString(%strbuf %execString, %strbuf %currToken)
 
     %functionPtr = inttoptr %int %ins to void ()*
     call void %functionPtr()
@@ -595,7 +594,7 @@ handleToken:
 
 insertFn:
     ; insert our function pointer into our heap
-    call void @insertToken(%int %currHeapIdx.value, %FNPTR %forthFn.ptr)
+    call fastcc void @insertToken(%int %currHeapIdx.value, %FNPTR %forthFn.ptr)
 
     ; advance our local heap index now that we've inserted a token
     %newHeapIdx.value = add %int %currHeapIdx.value, 1
@@ -670,12 +669,12 @@ nextLitChr:
 
 insertLiteral:
     ; insert our _LIT function into the heap
-    call void @insertToken(%int %currHeapIdx.value, %FNPTR @LIT)
+    call fastcc void @insertToken(%int %currHeapIdx.value, %FNPTR @LIT)
     %newHeapIdx.value.insertLiteral = add %int %currHeapIdx.value, 1
 
     ; Now that we have our constructed literal, insert it into the heap
-    call void @insertLiteral(%int %newHeapIdx.value.insertLiteral,
-                             %int %newLiteralInt.value)
+    call fastcc void @insertLiteral(%int %newHeapIdx.value.insertLiteral,
+                                   %int %newLiteralInt.value)
 
     ; report our new literal to the user
     call void @printTwoString(i8* %literalString.ptr, i8* %currToken.ptr)
@@ -715,7 +714,7 @@ done:
     call void @printValueInt( %int %currHeapIdx.value.done )
 
     ; clean up by terminating our compiled output with a null byte
-    call void @insertLiteral(%int %currHeapIdx.value.done,
+    call fastcc void @insertLiteral(%int %currHeapIdx.value.done,
                              %int 00)
 
     ret void
@@ -748,7 +747,7 @@ loop:
 
 continue_loop:
     ; call our getHeap routine to get the stack value under the index pointer
-    %currStackValue = call %int @getHeap(%int %stackIdx)
+    %currStackValue = call fastcc %int @getHeap(%int %stackIdx)
 
     ; compute our distance relative to the end of the heap for the stack pos
     %relStackIdx = sub %int %heapSize, %stackIdx
@@ -771,71 +770,71 @@ done:
 ; here be FORTH words now
 ; *****************************************************************************
 
-define void @LIT() noreturn {
+define fastcc void @LIT() noreturn {
     %execIdx.value = load %pntr @execIdx
-    %ahead.value = call %cell @getHeap(%int %execIdx.value)
-    call void @pushStack(%cell %ahead.value)
+    %ahead.value = call fastcc %cell @getHeap(%int %execIdx.value)
+    call fastcc void @pushStack(%cell %ahead.value)
     %execIdxIncr.value = add %int %execIdx.value, 1
     store %int %execIdxIncr.value, %pntr @execIdx
-    call void @next()
+    call fastcc void @next() noreturn
     ret void
 }
 
-define void @SWAP() noreturn {
-    %first = call %cell @popStack()
-    %second = call %cell @popStack()
-    call void @pushStack(%cell %first)
-    call void @pushStack(%cell %second)
-    call void @next()
+define fastcc void @SWAP() noreturn {
+    %first = tail call fastcc %cell @popStack()
+    %second = tail call fastcc %cell @popStack()
+    tail call fastcc void @pushStack(%cell %first)
+    tail call fastcc void @pushStack(%cell %second)
+    call fastcc void @next() noreturn
     ret void
 }
 
-define void @DUP() noreturn {
-    %first = call %cell @getTopStack()
-    call void @pushStack(%cell %first)
-    call void @next()
+define fastcc void @DUP() noreturn {
+    %first = tail call fastcc %cell @getTopStack()
+    tail call fastcc void @pushStack(%cell %first)
+    call fastcc void @next() noreturn
     ret void
 }
 
-define void @ADD() noreturn {
-    %first = call %cell @popStack()
-    %second = call %cell @popStack()
+define fastcc void @ADD() noreturn {
+    %first = tail call fastcc %cell @popStack()
+    %second = tail call fastcc %cell @popStack()
     %result = add %cell %first, %second
-    call void @pushStack(%cell %result)
-    call void @next()
+    tail call fastcc void @pushStack(%cell %result)
+    call fastcc void @next() noreturn
     ret void
 }
 
-define void @SUB() noreturn {
-    %first = call %cell @popStack()
-    %second = call %cell @popStack()
+define fastcc void @SUB() noreturn {
+    %first = tail call fastcc %cell @popStack()
+    %second = tail call fastcc %cell @popStack()
     %result = sub %cell %second, %first
-    call void @pushStack(%cell %result)
-    call void @next()
+    tail call fastcc void @pushStack(%cell %result)
+    call fastcc void @next() noreturn
     ret void
 }
 
-define void @MUL() noreturn {
-    %first = call %cell @popStack()
-    %second = call %cell @popStack()
+define fastcc void @MUL() noreturn {
+    %first = tail call fastcc %cell @popStack()
+    %second = tail call fastcc %cell @popStack()
     %result = mul %cell %first, %second
-    call void @pushStack(%cell %result)
-    call void @next()
+    tail call fastcc void @pushStack(%cell %result)
+    call fastcc void @next() noreturn
     ret void
 }
 
-define void @DIV() noreturn {
-    %first = call %cell @popStack()
-    %second = call %cell @popStack()
+define fastcc void @DIV() noreturn {
+    %first = tail call fastcc %cell @popStack()
+    %second = tail call fastcc %cell @popStack()
     %result = udiv %cell %second, %first
-    call void @pushStack(%cell %result)
-    call void @next()
+    tail call fastcc void @pushStack(%cell %result)
+    call fastcc void @next() noreturn
     ret void
 }
 
-define void @DISPSTACK() noreturn {
-    call void @showStack()
-    call void @next()
+define fastcc void @DISPSTACK() noreturn {
+    call fastcc void @showStack()
+    call fastcc void @next() noreturn
     ret void
 }
 
@@ -888,7 +887,7 @@ execBuffer:
     store %int 0, %pntr @execIdx
 
     ; kick off our compiled program
-    call void @next()
+    call fastcc void @next()
 
     ; reset our input buffer pointer to 0
     store i16 0, i16* %inputBufferIdx.ptr
@@ -994,7 +993,7 @@ define %int @main() {
     call void @compile(i8* %i8_testProgram, %int 0)
 
     ; ** and finally, execute our program
-    call void @next()
+    call fastcc void @next()
 
     call void @repl()
 
