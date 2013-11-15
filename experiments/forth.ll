@@ -10,6 +10,7 @@
 %addr = type i64
 %addr.ptr = type i64*
 
+@CELLSIZE = weak global %int 8
 %FNPTR = type void (%cell.ptr*, %exec.ptr*, %ret.ptr*, %int*)*
 %WORD = type { %WORD*, %FNPTR, i8* }
 
@@ -22,6 +23,16 @@ declare i32 @puts(i8*)
 declare i32 @read(%int, i8*, %int)
 declare i32 @printf(i8*, ... )
 declare void @llvm.memcpy.p0i8.p0i8.i32(i8*, i8*, i32, i32, i1)
+
+; below needs to be adjusted to the machine architecutre as appropriate; wrapper
+; funciton is called from within the Forth code.
+declare {i64, i1} @llvm.uadd.with.overflow.i64(i64 %a, i64 %b)
+
+define {%int, i1} @llvm_ump(%int %first.value, %int %second.value) {
+    %res = call {%int, i1} @llvm.uadd.with.overflow.i64(%int %first.value,
+                                                        %int %second.value)
+    ret {%int, i1} %res
+}
 
 ; *****************************************************************************
 ; for ease of debugging, allows us to print a value to stdout
@@ -192,16 +203,31 @@ define cc 10 void @printStackPush(%int %addr, %int %value) {
 
 ; * constants containing strings of Forth words
 @str_dispStack = internal constant [ 3 x i8 ] c".s\00"
-@str_swap =      internal constant [ 5 x i8 ] c"swap\00"
-@str_dup =       internal constant [ 4 x i8 ] c"dup\00"
+@str_sp_at =     internal constant [ 4 x i8 ] c"SP@\00"
+@str_sp_bang =   internal constant [ 4 x i8 ] c"SP!\00"
+@str_swap =      internal constant [ 5 x i8 ] c"SWAP\00"
+@str_dup =       internal constant [ 4 x i8 ] c"DUP\00"
+@str_drop =      internal constant [ 5 x i8 ] c"DROP\00"
+@str_over =      internal constant [ 5 x i8 ] c"OVER\00"
+@str_umplus =    internal constant [ 4 x i8 ] c"UM+\00"
 @str_add =       internal constant [ 2 x i8 ] c"+\00"
 @str_sub =       internal constant [ 2 x i8 ] c"-\00"
 @str_mul =       internal constant [ 2 x i8 ] c"*\00"
 @str_div =       internal constant [ 2 x i8 ] c"/\00"
-@str_lit =       internal constant [ 5 x i8 ] c"_lit\00"
+@str_lit =       internal constant [ 5 x i8 ] c"_LIT\00"
+@str_char_min =  internal constant [ 6 x i8 ] c"CHAR-\00"
+@str_char_plus = internal constant [ 6 x i8 ] c"CHAR+\00"
+@str_chars =     internal constant [ 6 x i8 ] c"CHARS\00"
+@str_cell_min =  internal constant [ 6 x i8 ] c"CELL-\00"
+@str_cell_plus = internal constant [ 6 x i8 ] c"CELL+\00"
+@str_cells =     internal constant [ 6 x i8 ] c"CELLS\00"
+@str_nonzero =   internal constant [ 3 x i8 ] c"0<\00"
+@str_and =       internal constant [ 4 x i8 ] c"AND\00"
+@str_or =        internal constant [ 3 x i8 ] c"OR\00"
+@str_xor =       internal constant [ 4 x i8 ] c"XOR\00"
 
 ; * test forth program
-@str_testProgram = internal constant [ 21 x i8 ] c"99 2 3 dup + swap .s\00"
+@str_testProgram = internal constant [ 21 x i8 ] c"99 2 3 DUP + SWAP .s\00"
 
 ; **** heap access and manipulation functions
 define fastcc %pntr @getHeap_ptr(%int %index) {
@@ -1182,6 +1208,177 @@ define cc 10 void @DUP(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
     ret void
 }
 
+define cc 10 void @DROP(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                       %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) {
+    ; call the intrinsic increment stack operator, to 'drop' the current item
+    call cc 10 void @_SP_INCR(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                              %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr)
+    call cc 10 void @next(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                           %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr)
+
+    ret void
+}
+
+; ****************************************************************************
+; ALU stuff
+; ****************************************************************************
+
+define cc 10 void @CHAR_MIN(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                            %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) {
+    %charSize.ptr = alloca %cell
+    store %cell 1, %cell* %charSize.ptr
+    call cc 10 void @_SP_PUSH(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                              %ret.ptr* %RSP.ptr.ptr, %int* %charSize.ptr)
+    call cc 10 void @SUB(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                         %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr)
+    ret void
+}
+
+define cc 10 void @CHAR_PLUS(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                            %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) {
+    %charSize.ptr = alloca %cell
+    store %cell 1, %cell* %charSize.ptr
+    call cc 10 void @_SP_PUSH(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                              %ret.ptr* %RSP.ptr.ptr, %int* %charSize.ptr)
+    call cc 10 void @ADD(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                         %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr)
+    ret void
+}
+
+; chars is a no-op as our addressing and indexing is int8
+define cc 10 void @CHARS(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                            %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) {
+    call cc 10 void @next(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                           %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr)
+    ret void
+}
+
+define cc 10 void @CELL_MIN(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                            %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) {
+    call cc 10 void @_SP_PUSH(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                              %ret.ptr* %RSP.ptr.ptr, %int* @CELLSIZE)
+    call cc 10 void @SUB(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                         %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr)
+    ret void
+}
+
+define cc 10 void @CELL_PLUS(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                             %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) {
+    call cc 10 void @_SP_PUSH(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                              %ret.ptr* %RSP.ptr.ptr, %int* @CELLSIZE)
+    call cc 10 void @ADD(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                         %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr)
+    ret void
+}
+
+define cc 10 void @CELLS(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                         %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) {
+    call cc 10 void @_SP_PUSH(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                              %ret.ptr* %RSP.ptr.ptr, %int* @CELLSIZE)
+    call cc 10 void @MUL(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                         %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr)
+    ret void
+}
+
+define cc 10 void @NONZERO(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                           %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) {
+    call cc 10 void @_SP_POP(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                             %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr)
+    %DATA.value = load %int* %DATA.ptr
+    %result.flag = icmp ugt %int %DATA.value, 0
+    %result.int = zext i1 %result.flag to %int
+    store %int %result.int, %int* %DATA.ptr
+    call cc 10 void @_SP_PUSH(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                              %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr)
+    call cc 10 void @next(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                           %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr)
+    ret void
+}
+
+define cc 10 void @AND(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                           %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) {
+    %first.ptr = alloca %int
+    %second.ptr = alloca %int
+    call cc 10 void @_SP_POP(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                             %ret.ptr* %RSP.ptr.ptr, %int* %first.ptr)
+    call cc 10 void @_SP_POP(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                             %ret.ptr* %RSP.ptr.ptr, %int* %second.ptr)
+    %first.value = load %int* %first.ptr
+    %second.value = load %int* %second.ptr
+    %DATA.value = and %int %first.value, %second.value
+    store %int %DATA.value, %int* %DATA.ptr
+    call cc 10 void @_SP_PUSH(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                              %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr)
+    call cc 10 void @next(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                           %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr)
+    ret void
+}
+
+define cc 10 void @OR(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                      %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) {
+    %first.ptr = alloca %int
+    %second.ptr = alloca %int
+    call cc 10 void @_SP_POP(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                             %ret.ptr* %RSP.ptr.ptr, %int* %first.ptr)
+    call cc 10 void @_SP_POP(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                             %ret.ptr* %RSP.ptr.ptr, %int* %second.ptr)
+    %first.value = load %int* %first.ptr
+    %second.value = load %int* %second.ptr
+    %DATA.value = or %int %first.value, %second.value
+    store %int %DATA.value, %int* %DATA.ptr
+    call cc 10 void @_SP_PUSH(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                              %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr)
+    call cc 10 void @next(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                           %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr)
+    ret void
+}
+
+define cc 10 void @XOR(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                       %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) {
+    %first.ptr = alloca %int
+    %second.ptr = alloca %int
+    call cc 10 void @_SP_POP(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                             %ret.ptr* %RSP.ptr.ptr, %int* %first.ptr)
+    call cc 10 void @_SP_POP(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                             %ret.ptr* %RSP.ptr.ptr, %int* %second.ptr)
+    %first.value = load %int* %first.ptr
+    %second.value = load %int* %second.ptr
+    %DATA.value = xor %int %first.value, %second.value
+    store %int %DATA.value, %int* %DATA.ptr
+    call cc 10 void @_SP_PUSH(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                              %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr)
+    call cc 10 void @next(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                           %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr)
+    ret void
+}
+
+define cc 10 void @UMPLUS(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                          %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) {
+    %first.ptr = alloca %cell
+    %second.ptr = alloca %cell
+    %result.ptr = alloca %cell
+    %carry.ptr = alloca %cell
+    call cc 10 void @_SP_POP(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                             %ret.ptr* %RSP.ptr.ptr, %int* %first.ptr)
+    call cc 10 void @_SP_POP(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                             %ret.ptr* %RSP.ptr.ptr, %int* %second.ptr)
+    %first.value = load %cell* %first.ptr
+    %second.value = load %cell* %second.ptr
+    %result = call {%int, i1} @llvm_ump(%int %first.value, %int %second.value)
+    %sum.int = extractvalue {%int, i1} %result, 0
+    %carry.flag = extractvalue {%int, i1} %result, 1
+    %carry.int = zext i1 %carry.flag to %int
+    store %int %sum.int, %cell* %result.ptr
+    call cc 10 void @_SP_PUSH(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                              %ret.ptr* %RSP.ptr.ptr, %int* %result.ptr)
+    store %int %carry.int, %cell* %carry.ptr
+    call cc 10 void @_SP_PUSH(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                              %ret.ptr* %RSP.ptr.ptr, %int* %carry.ptr)
+    call cc 10 void @next(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                           %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr)
+    ret void
+}
+
 define cc 10 void @ADD(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
                        %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) {
     %first.ptr = alloca %cell
@@ -1380,6 +1577,14 @@ define %int @main() {
     ; register our Forth functions in the dictionary
     ; *************************************************************************
 
+    ; _lit - @LIT
+    %ptr_lit = getelementptr [ 5 x i8 ]* @str_lit, i32 0
+    %i8_lit = bitcast [ 5 x i8 ]* %ptr_lit to i8*
+    %dictEntry.lit = alloca %WORD
+    call void @registerDictionary( i8* %i8_lit,  
+                                   %WORD* %dictEntry.lit,
+                                   %FNPTR @_LIT )
+
     ; .s - @DISPSTACK
     %ptr_dispStack = getelementptr [ 3 x i8 ]* @str_dispStack, i32 0
     %i8_dispStack = bitcast [ 3 x i8 ]* %ptr_dispStack to i8*
@@ -1420,13 +1625,13 @@ define %int @main() {
                                    %WORD* %dictEntry.add,
                                    %FNPTR @ADD )
 
-    ; _lit - @LIT
-    %ptr_lit = getelementptr [ 5 x i8 ]* @str_lit, i32 0
-    %i8_lit = bitcast [ 5 x i8 ]* %ptr_lit to i8*
-    %dictEntry.lit = alloca %WORD
-    call void @registerDictionary( i8* %i8_lit,  
-                                   %WORD* %dictEntry.lit,
-                                   %FNPTR @_LIT )
+    ; UM+ - @UMPLUS
+    %ptr_umplus = getelementptr [ 4 x i8 ]* @str_umplus, i32 0
+    %i8_umplus = bitcast [ 4 x i8 ]* %ptr_umplus to i8*
+    %dictEntry.umplus = alloca %WORD
+    call void @registerDictionary( i8* %i8_umplus,  
+                                   %WORD* %dictEntry.umplus,
+                                   %FNPTR @UMPLUS )
 
     ; swap - @SWAP
     %ptr_swap = getelementptr [ 5 x i8 ]* @str_swap, i32 0
@@ -1443,6 +1648,94 @@ define %int @main() {
     call void @registerDictionary( i8* %i8_dup,  
                                    %WORD* %dictEntry.dup,
                                    %FNPTR @DUP )
+
+    ; drop - @DROP
+    %ptr_drop = getelementptr [ 5 x i8 ]* @str_drop, i32 0
+    %i8_drop = bitcast [ 5 x i8 ]* %ptr_drop to i8*
+    %dictEntry.drop = alloca %WORD
+    call void @registerDictionary( i8* %i8_drop,  
+                                   %WORD* %dictEntry.drop,
+                                   %FNPTR @DROP )
+
+    ; CHAR- - @CHAR_MIN
+    %ptr_char_min = getelementptr [ 6 x i8 ]* @str_char_min, i32 0
+    %i8_char_min = bitcast [ 6 x i8 ]* %ptr_char_min to i8*
+    %dictEntry.char_min = alloca %WORD
+    call void @registerDictionary( i8* %i8_char_min,  
+                                   %WORD* %dictEntry.char_min,
+                                   %FNPTR @CHAR_MIN )
+
+    ; CHAR+ - @CHAR_PLUS
+    %ptr_char_plus = getelementptr [ 6 x i8 ]* @str_char_plus, i32 0
+    %i8_char_plus = bitcast [ 6 x i8 ]* %ptr_char_plus to i8*
+    %dictEntry.char_plus = alloca %WORD
+    call void @registerDictionary( i8* %i8_char_plus,  
+                                   %WORD* %dictEntry.char_plus,
+                                   %FNPTR @CHAR_PLUS )
+
+    ; CHARS - @CHARS
+    %ptr_chars = getelementptr [ 6 x i8 ]* @str_chars, i32 0
+    %i8_chars = bitcast [ 6 x i8 ]* %ptr_chars to i8*
+    %dictEntry.chars = alloca %WORD
+    call void @registerDictionary( i8* %i8_chars,  
+                                   %WORD* %dictEntry.chars,
+                                   %FNPTR @CHARS )
+
+    ; CELL- - @CELL_MIN
+    %ptr_cell_min = getelementptr [ 6 x i8 ]* @str_cell_min, i32 0
+    %i8_cell_min = bitcast [ 6 x i8 ]* %ptr_cell_min to i8*
+    %dictEntry.cell_min = alloca %WORD
+    call void @registerDictionary( i8* %i8_cell_min,  
+                                   %WORD* %dictEntry.cell_min,
+                                   %FNPTR @CELL_MIN )
+
+    ; CELL+ - @CELL_PLUS
+    %ptr_cell_plus = getelementptr [ 6 x i8 ]* @str_cell_plus, i32 0
+    %i8_cell_plus = bitcast [ 6 x i8 ]* %ptr_cell_plus to i8*
+    %dictEntry.cell_plus = alloca %WORD
+    call void @registerDictionary( i8* %i8_cell_plus,  
+                                   %WORD* %dictEntry.cell_plus,
+                                   %FNPTR @CELL_PLUS )
+
+    ; CELLS - @CELLS
+    %ptr_cells = getelementptr [ 6 x i8 ]* @str_cells, i32 0
+    %i8_cells = bitcast [ 6 x i8 ]* %ptr_cells to i8*
+    %dictEntry.cells = alloca %WORD
+    call void @registerDictionary( i8* %i8_cells,  
+                                   %WORD* %dictEntry.cells,
+                                   %FNPTR @CELLS )
+
+    ; 0< - @NONZERO
+    %ptr_nonzero = getelementptr [ 3 x i8 ]* @str_nonzero, i32 0
+    %i8_nonzero = bitcast [ 3 x i8 ]* %ptr_nonzero to i8*
+    %dictEntry.nonzero = alloca %WORD
+    call void @registerDictionary( i8* %i8_nonzero,  
+                                   %WORD* %dictEntry.nonzero,
+                                   %FNPTR @NONZERO )
+
+    ; AND - @AND
+    %ptr_and = getelementptr [ 4 x i8 ]* @str_and, i32 0
+    %i8_and = bitcast [ 4 x i8 ]* %ptr_and to i8*
+    %dictEntry.and = alloca %WORD
+    call void @registerDictionary( i8* %i8_and,  
+                                   %WORD* %dictEntry.and,
+                                   %FNPTR @AND )
+
+    ; OR - @OR
+    %ptr_or = getelementptr [ 3 x i8 ]* @str_or, i32 0
+    %i8_or = bitcast [ 3 x i8 ]* %ptr_or to i8*
+    %dictEntry.or = alloca %WORD
+    call void @registerDictionary( i8* %i8_or,  
+                                   %WORD* %dictEntry.or,
+                                   %FNPTR @OR )
+
+    ; XOR - @XOR
+    %ptr_xor = getelementptr [ 4 x i8 ]* @str_xor, i32 0
+    %i8_xor = bitcast [ 4 x i8 ]* %ptr_xor to i8*
+    %dictEntry.xor = alloca %WORD
+    call void @registerDictionary( i8* %i8_xor,  
+                                   %WORD* %dictEntry.xor,
+                                   %FNPTR @XOR )
 
     ; ** test our dictionary navigation
     call void @printDictionary()
