@@ -1,9 +1,16 @@
 %pntr = type i64*
-%int = type i64
-%cell = type i64
 %strbuf = type i8*
+%cell = type i64
+%cell.ptr = type i64*
+%exec = type i64
+%exec.ptr = type i64*
+%ret = type i64
+%ret.ptr = type i64*
+%int = type i64
+%addr = type i64
+%addr.ptr = type i64*
 
-%FNPTR = type void ()*
+%FNPTR = type void (%cell.ptr*, %exec.ptr*, %ret.ptr*, %int*)*
 %WORD = type { %WORD*, %FNPTR, i8* }
 
 ; *****************************************************************************
@@ -21,7 +28,6 @@ declare void @llvm.memcpy.p0i8.p0i8.i32(i8*, i8*, i32, i32, i1)
 ; *****************************************************************************
 
 @valueString = internal constant    [7 x i8]  c"%llu\0D\0A\00"
-@stackString = internal constant    [13 x i8] c"%llu: %llu\0D\0A\00"
 @wordString =  internal constant    [5 x i8]  c"%s\0D\0A\00"
 @twoWordString = internal constant  [8 x i8]  c"%s %s\0D\0A\00"
 @execString = internal constant     [6 x i8]  c"EXEC:\00"
@@ -34,6 +40,13 @@ declare void @llvm.memcpy.p0i8.p0i8.i32(i8*, i8*, i32, i32, i1)
 @dictNavString = internal constant  [15 x i8] c"--> %s (%llu) \00"
 @newlineString = internal constant  [3 x i8]  c"\0D\0A\00"
 @promptString = internal constant   [5 x i8]  c" Ok \00"
+@stackString = internal constant    [14 x i8] c"@%llu: %llu\0D\0A\00"
+@SPString = internal constant       [23 x i8] c"SP: @%llu SP0: @%llu\0D\0A\00"
+@SPValuesString = internal constant [33 x i8] c"SP: @%llu=%llu SP0: @%llu=%llu\0D\0A\00"
+@EIPString = internal constant      [13 x i8] c"EIP: @%llu\0D\0A\00"
+@EIPValueString = internal constant [19 x i8] c"EIP: @%llu: %llu\0D\0A\00"
+@pushString = internal constant     [17 x i8] c"%llu --> @%llu\0D\0A\00"
+@popString = internal constant      [17 x i8] c"@%llu --> %llu\0D\0A\00"
 
 define void @printValue8(i8 %value) {
     %string = getelementptr [7 x i8]* @valueString, i32 0, i32 0
@@ -85,15 +98,97 @@ define void @outputNewLine() {
     ret void
 }
 
+define void @printEIPPtr(%cell.ptr* %EIP.ptr.ptr) {
+    %string = getelementptr [13 x i8]* @EIPString, i32 0, i32 0
+    ; obtain the heap position that EIP is pointing at
+    %EIP.ptr = getelementptr %cell.ptr* %EIP.ptr.ptr, i32 0
+    %EIP.heap.ptr = load %cell.ptr* %EIP.ptr
+    %EIP.heap.addr.ptr = getelementptr %cell.ptr %EIP.heap.ptr, i32 0
+    %EIP.heap.addr.int = ptrtoint %cell.ptr %EIP.heap.addr.ptr to %addr
+
+    %printf_ret = call i32 (i8*, ... )* @printf(i8* %string,
+                                                %int %EIP.heap.addr.int)    
+    ret void
+}
+
+define void @printEIPPtrValue(%cell.ptr* %EIP.ptr.ptr) {
+    %string = getelementptr [19 x i8]* @EIPValueString, i32 0, i32 0
+    ; obtain the heap position that EIP is pointing at
+    %EIP.ptr = getelementptr %cell.ptr* %EIP.ptr.ptr, i32 0
+    %EIP.heap.ptr = load %cell.ptr* %EIP.ptr
+    %EIP.heap.addr.ptr = getelementptr %cell.ptr %EIP.heap.ptr, i32 0
+    %EIP.heap.addr.int = ptrtoint %cell.ptr %EIP.heap.addr.ptr to %addr
+    %EIP.heap.addr.value = load %cell.ptr %EIP.heap.addr.ptr
+
+    %printf_ret = call i32 (i8*, ... )* @printf(i8* %string,
+                                                %int %EIP.heap.addr.int,
+                                                %int %EIP.heap.addr.value)    
+    ret void
+}
+
+define void @printStackPtrs(%cell.ptr* %SP.ptr.ptr) {
+    %string = getelementptr [23 x i8]* @SPString, i32 0, i32 0
+    ; obtain the stack position that SP is pointing at
+    %SP.ptr = getelementptr %cell.ptr* %SP.ptr.ptr, i32 0
+    %SP.stack.ptr = load %cell.ptr* %SP.ptr
+    %SP.stack.addr.ptr = getelementptr %cell.ptr %SP.stack.ptr, i32 0
+    %SP.stack.addr.int = ptrtoint %cell.ptr %SP.stack.addr.ptr to %addr
+    ; obtain the stack position that SP0 is pointing at
+    %SP0.stack.ptr = load %cell.ptr* @SP0
+    %SP0.stack.addr.ptr = getelementptr %addr.ptr %SP0.stack.ptr, i32 0
+    %SP0.stack.addr.int = ptrtoint %addr.ptr %SP0.stack.addr.ptr to %addr
+
+    %printf_ret = call i32 (i8*, ... )* @printf(i8* %string,
+                                                %int %SP.stack.addr.int, 
+                                                %int %SP0.stack.addr.int)    
+    ret void
+}
+
+define void @printStackPtrValues(%cell.ptr* %SP.ptr.ptr) {
+    %string = getelementptr [33 x i8]* @SPValuesString, i32 0, i32 0
+    ; obtain the stack position that SP is pointing at
+    %SP.ptr = getelementptr %cell.ptr* %SP.ptr.ptr, i32 0
+    %SP.stack.ptr = load %cell.ptr* %SP.ptr
+    %SP.stack.addr.ptr = getelementptr %cell.ptr %SP.stack.ptr, i32 0
+    %SP.stack.addr.int = ptrtoint %cell.ptr %SP.stack.addr.ptr to %addr
+    %SP.stack.addr.value = load %cell.ptr %SP.stack.addr.ptr
+    ; obtain the stack position that SP0 is pointing at
+    %SP0.stack.ptr = load %cell.ptr* @SP0
+    %SP0.stack.addr.ptr = getelementptr %addr.ptr %SP0.stack.ptr, i32 0
+    %SP0.stack.addr.int = ptrtoint %addr.ptr %SP0.stack.addr.ptr to %addr
+    %SP0.stack.addr.value = load %cell.ptr %SP0.stack.addr.ptr
+
+    %printf_ret = call i32 (i8*, ... )* @printf(i8* %string,
+                                                %int %SP.stack.addr.int, 
+                                                %int %SP.stack.addr.value,
+                                                %int %SP0.stack.addr.int,
+                                                %int %SP0.stack.addr.value)    
+    ret void
+}
+
+define cc 10 void @printStackPop(%int %addr, %int %value) {
+    %string = getelementptr [17 x i8]* @popString, i32 0, i32 0
+    %printf_ret = call i32 (i8*, ... )* @printf(i8* %string,
+                                                %int %addr, %int %value)
+    ret void
+}
+
+define cc 10 void @printStackPush(%int %addr, %int %value) {
+    %string = getelementptr [17 x i8]* @pushString, i32 0, i32 0
+    %printf_ret = call i32 (i8*, ... )* @printf(i8* %string,
+                                                %int %value, %int %addr)
+    ret void
+}
+
 ; *****************************************************************************
 ; globals used for Forth heap, execution and stack
 ; *****************************************************************************
 
-@heapPtr = weak global %pntr null       ; pointer to an alloca'ed structure
+@SP0 = weak global %cell.ptr null
+@HEAP = weak global %cell.ptr null
+
 @dictPtr = weak global %WORD* null      ; pointer to the last word in the dict
 @heapSize = weak global %int 0          ; size of the heap in i8 bytes
-@execIdx = weak global %int 0           ; curr exec idx relative to @heapPtr
-@stackIdx = weak global %int 0          ; curr stack idx relative to @heapPtr
 
 ; * constants containing strings of Forth words
 @str_dispStack = internal constant [ 3 x i8 ] c".s\00"
@@ -111,7 +206,7 @@ define void @outputNewLine() {
 ; **** heap access and manipulation functions
 define fastcc %pntr @getHeap_ptr(%int %index) {
     ; load our heap pointer, which is stored as a pointer
-    %heapPtr = load %pntr* @heapPtr
+    %heapPtr = load %pntr* @HEAP
     ; retrieve and return our value pointer
     %valuePtr = getelementptr %pntr %heapPtr, %int %index
     ret %pntr %valuePtr
@@ -129,9 +224,9 @@ define fastcc void @putHeap(%int %index, %int %value) {
     ret void
 }
 
-define fastcc void @insertToken(%int %index, void ()* %token) {
+define fastcc void @insertToken(%int %index, %FNPTR %token) {
     %insPtr = call fastcc %pntr @getHeap_ptr(%int %index)
-    %tokenPtrInt = ptrtoint void ()* %token to %int
+    %tokenPtrInt = ptrtoint %FNPTR %token to %int
     call fastcc void @putHeap(%int %index, %int %tokenPtrInt)
     ret void
 }
@@ -142,71 +237,334 @@ define fastcc void @insertLiteral(%int %index, %int %value) {
     ret void
 }
 
-; **** stack manipulation functions
-define fastcc void @pushStack(%int %value) {
-    ; load our stack pointer which is stored as an int32, relative to @heapPtr
-    %stackIdx = load %pntr @stackIdx
-    ; decrement our stack pointer, as our stack is right to left from the end
-    ; of the heap
-    %newStackIdx = sub %int %stackIdx, 1
-    ; store our value at our stack location
-    call fastcc void @putHeap(%int %newStackIdx, %int %value)
-    ; store our new current stack index
-    store %int %newStackIdx, %pntr @stackIdx
+; ****************************************************************************
+; stack manipulation functions
+; ****************************************************************************
+
+;   SP!                         ( n -- ) r4: n
+define cc 10 void @_SP_POP(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                           %ret.ptr* %RSP.ptr.ptr, %cell* %DATA.ptr) {
+
+    %SP.next.ptr.int.ptr = alloca %addr
+    ; obtain the stack value that SP is pointing at
+    call cc 10 void @_SP_PEEK(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                           %ret.ptr* %RSP.ptr.ptr, %cell* %DATA.ptr)
+    ; decrement our stack pointer now that we've obtained our value
+    call cc 10 void @_SP_INCR(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                           %ret.ptr* %RSP.ptr.ptr, %addr* %SP.next.ptr.int.ptr)
+
+    ; report the pop
+    %SP.next.ptr.int = load %addr* %SP.next.ptr.int.ptr
+    %DATA.value = load %cell* %DATA.ptr
+    ;call cc 10 void @printStackPop(%addr %SP.next.ptr.int, %cell %DATA.value)
+
     ret void
 }
 
-define fastcc %cell @popStack() {
-    ; load our stack pointer which is stored as an int32, relative to @heapPtr
-    %stackIdx = load %pntr @stackIdx
-    ; grab our value to return from the stack
-    %value = call fastcc %cell @getHeap(%int %stackIdx)
-    ; increment our stack pointer, moving it to the right
-    %newStackIdx = add %int %stackIdx, 1
-    ; store our new current stack index
-    store %int %newStackIdx, %pntr @stackIdx
-    ; finally, return the value we popped off the stack
-    ret %cell %value
+;    DUP                         ( n -- n n )
+define cc 10 void @_SP_DUP(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                            %ret.ptr* %RSP.ptr.ptr, %cell* %DATA.ptr) {
+
+    %value.ptr = alloca %cell
+    ; obtain the stack value that SP is pointing at
+    call cc 10 void @_SP_PEEK(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                           %ret.ptr* %RSP.ptr.ptr, %cell* %value.ptr)
+    ; push a duplicate of the value onto the stack
+    call cc 10 void @_SP_PUSH(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                           %ret.ptr* %RSP.ptr.ptr, %cell* %value.ptr)
+
+    ret void
 }
 
-define fastcc %cell @getTopStack() {
-    ; load our stack pointer which is stored as an int32, relative to @heapPtr
-    %stackIdx = load %pntr @stackIdx
-    ; grab our value to return from the stack
-    %value = call fastcc %int @getHeap(%int %stackIdx)
-    ; finally, return the value we popped off the stack
-    ret %cell %value
+;   PUSH                        ( -- n )
+define cc 10 void @_SP_PUSH(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                        %ret.ptr* %RSP.ptr.ptr, %cell* %DATA.ptr) {
+
+    %SP.next.ptr.int.ptr = alloca %addr
+    %DATA.value = load %cell* %DATA.ptr
+
+    call cc 10 void @_SP_DECR(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                          %ret.ptr* %RSP.ptr.ptr, %addr* %SP.next.ptr.int.ptr )
+
+    %SP.next.ptr.int = load %addr* %SP.next.ptr.int.ptr
+    %SP.next.ptr = inttoptr %addr %SP.next.ptr.int to %addr*
+
+    ; store our value at the new stack position
+    store %cell %DATA.value, %cell.ptr %SP.next.ptr
+
+    ;call cc 10 void @printStackPush(%addr %SP.next.ptr.int, %cell %DATA.value)
+
+    ret void
 }
 
-; **** execution loop functions
-define %int @nextExec() {
-    ; our current execution pointer, which is %heapPtr + %execIdx
-    %execIdx = load %pntr @execIdx
-    ; dereference our heap pointer and point at the element under the %execIdx
-    ; indice
-    %ins = call fastcc %int @getHeap(%int %execIdx)
-    ; increment our instruction pointer and store it
-    %nextExec = add %int %execIdx, 1
-    store %int %nextExec, %pntr @execIdx
-    ; finally, return our instruction
-    ret %int %ins
+;   SP@                         ( -- a )
+;   INTERNAL: push the stack position onto the stack
+
+define cc 10 void @_SP_AT(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                          %ret.ptr* %RSP.ptr.ptr, %cell* %DATA.ptr) {
+
+    ; obtain the stack position that SP is pointing at
+    %SP.ptr = getelementptr %cell.ptr* %SP.ptr.ptr, i32 0
+    %value.ptr = load %cell.ptr* %SP.ptr
+    %value.cell.ptr = getelementptr %cell.ptr %value.ptr, i32 0
+    %SP.ptr.int = ptrtoint %cell.ptr %value.cell.ptr to %addr
+    store %addr %SP.ptr.int, %addr* %DATA.ptr
+
+    call cc 10 void @_SP_PUSH(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                           %ret.ptr* %RSP.ptr.ptr, %addr* %DATA.ptr)
+
+    ret void
 }
 
-define fastcc void @next() {
+;   SWAP                        ( n1 n2 -- n2 n1 )
+;   INTERNAL: swap the topmost two elements of the stack
+define cc 10 void @_SP_SWAP(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                           %ret.ptr* %RSP.ptr.ptr, %cell* %DATA.ptr) {
+    %first.ptr = alloca %cell
+    %second.ptr = alloca %cell
+    call cc 10 void @_SP_POP(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                           %ret.ptr* %RSP.ptr.ptr, %cell* %first.ptr)
+    call cc 10 void @_SP_POP(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                           %ret.ptr* %RSP.ptr.ptr, %cell* %second.ptr)
+    call cc 10 void @_SP_PUSH(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                           %ret.ptr* %RSP.ptr.ptr, %cell* %first.ptr)
+    call cc 10 void @_SP_PUSH(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                           %ret.ptr* %RSP.ptr.ptr, %cell* %second.ptr)
+    ret void
+}
+
+;   OVER                        ( n1 n2 -- n1 n2 n1 )
+;   INTERNAL: copy the second value on the stack into the front of the stack
+define cc 10 void @_SP_OVER(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                           %ret.ptr* %RSP.ptr.ptr, %cell* %DATA.ptr) {
+    %first.ptr = alloca %cell
+    %second.ptr = alloca %cell
+    call cc 10 void @_SP_POP(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                           %ret.ptr* %RSP.ptr.ptr, %cell* %first.ptr)
+    call cc 10 void @_SP_POP(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                           %ret.ptr* %RSP.ptr.ptr, %cell* %second.ptr)
+    call cc 10 void @_SP_PUSH(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                           %ret.ptr* %RSP.ptr.ptr, %cell* %second.ptr)
+    call cc 10 void @_SP_PUSH(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                           %ret.ptr* %RSP.ptr.ptr, %cell* %first.ptr)
+    call cc 10 void @_SP_PUSH(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                           %ret.ptr* %RSP.ptr.ptr, %cell* %second.ptr)
+    ret void
+}
+
+;   PEEK                        ( n -- n ) r4: n
+;   INTERNAL: return the value under the stack pointer in r4
+define cc 10 void @_SP_PEEK(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                           %ret.ptr* %RSP.ptr.ptr, %cell* %DATA.ptr) {
+    ; obtain the stack value that SP is pointing at
+    %SP.ptr = getelementptr %cell.ptr* %SP.ptr.ptr, i32 0
+    %value.ptr = load %cell.ptr* %SP.ptr
+    %value.cell.ptr = getelementptr %cell.ptr %value.ptr, i32 0
+    %value.cell.ptr.int = ptrtoint %cell.ptr %value.cell.ptr to %int
+    ; grab the current value under the stack pointer
+    %value.cell = load %cell* %value.cell.ptr
+    store %cell %value.cell, %cell* %DATA.ptr
+
+    ret void
+}
+
+;   DROP                        ( n -- )
+;   INTERNAL: increment the stack pointer, which has a side effect of DROP
+define cc 10 void @_SP_INCR(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                           %ret.ptr* %RSP.ptr.ptr, %cell* %DATA.ptr) {
+    ; obtain the stack position that SP is pointing at
+    %SP.ptr = getelementptr %cell.ptr* %SP.ptr.ptr, i32 0
+    %value.ptr = load %cell.ptr* %SP.ptr
+    %value.cell.ptr = getelementptr %cell.ptr %value.ptr, i32 0
+
+    ; increment SP
+    %SP.ptr.int = ptrtoint %cell.ptr %value.cell.ptr to %addr
+    %SP.next.ptr.int = add %addr %SP.ptr.int, 8
+    %SP.next.ptr = inttoptr %addr %SP.next.ptr.int to %cell.ptr
+
+    ; finalize our new state
+    store %cell %SP.next.ptr.int, %cell* %DATA.ptr
+    store %cell.ptr %SP.next.ptr, %cell.ptr* %SP.ptr.ptr
+
+    ret void
+}
+
+;   INTERNAL: decrement the stack pointer
+define cc 10 void @_SP_DECR(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                           %ret.ptr* %RSP.ptr.ptr, %cell* %DATA.ptr) {
+    ; obtain the stack position that SP is pointing at
+    %SP.ptr = getelementptr %cell.ptr* %SP.ptr.ptr, i32 0
+    %value.ptr = load %cell.ptr* %SP.ptr
+    %value.cell.ptr = getelementptr %cell.ptr %value.ptr, i32 0
+
+    ; decrement SP
+    %SP.ptr.int = ptrtoint %cell.ptr %value.cell.ptr to %addr
+    %SP.next.ptr.int = sub %addr %SP.ptr.int, 8
+    %SP.next.ptr = inttoptr %addr %SP.next.ptr.int to %cell.ptr
+    ;call void @printValueInt( %addr %SP.next.ptr.int )
+
+    ; finalize our new state
+    store %cell %SP.next.ptr.int, %cell* %DATA.ptr
+    store %cell.ptr %SP.next.ptr, %cell.ptr* %SP.ptr.ptr
+
+    ret void
+}
+
+; ****************************************************************************
+; Memory access functions
+; ****************************************************************************
+
+; C!                          ( c a -- ) 
+define cc 10 void @_C_BANG(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                         %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) {
+    %address.cell.ptr = alloca %cell
+    %value.cell.ptr   = alloca %cell
+
+    call cc 10 void @_SP_POP(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                           %ret.ptr* %RSP.ptr.ptr, %cell* %address.cell.ptr)
+    call cc 10 void @_SP_POP(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                           %ret.ptr* %RSP.ptr.ptr, %cell* %value.cell.ptr)
+
+    %address.cell = load %cell* %address.cell.ptr
+    %value.cell = load %cell* %value.cell.ptr
+    %address.ptr = inttoptr %cell %address.cell to %cell*
+    store %cell %value.cell, %cell* %address.ptr
+
+    ret void
+}
+
+; C@                          ( a -- c )
+define cc 10 void @_C_AT(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                         %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) {
+    %address.cell.ptr = alloca %cell
+    %value.cell.ptr =   alloca %cell
+
+    call cc 10 void @_SP_POP(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                             %ret.ptr* %RSP.ptr.ptr, %cell* %address.cell.ptr)
+
+    %address.cell = load %cell* %address.cell.ptr
+    %address.ptr = inttoptr %cell %address.cell to %addr*
+    %retrieve.cell = load %cell* %address.ptr
+    store %cell %retrieve.cell, %cell* %value.cell.ptr
+
+    call cc 10 void @_SP_PUSH(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                              %ret.ptr* %RSP.ptr.ptr, %cell* %value.cell.ptr)
+
+    ret void
+}
+
+
+; ****************************************************************************
+; Execution loop functions
+; ****************************************************************************
+
+define cc 10 void @_EIP_INCR(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                             %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) {
+    ; resolve our current EIP
+    %EIP.ptr = getelementptr %exec.ptr* %EIP.ptr.ptr, i32 0
+    %EIP.value.ptr = load %exec.ptr* %EIP.ptr
+    %EIP.exec.ptr = getelementptr %exec.ptr %EIP.value.ptr, i32 0
+
+    ; increment EIP
+    %EIP.ptr.int = ptrtoint %exec.ptr %EIP.exec.ptr to %addr
+    %EIP.next.ptr.int = add %addr %EIP.ptr.int, 8
+    %EIP.next.ptr = inttoptr %addr %EIP.next.ptr.int to %exec.ptr
+
+    ; finalize our new state
+    store %exec.ptr %EIP.next.ptr, %exec.ptr* %EIP.ptr.ptr
+
+    ret void
+}
+
+define cc 10 void @_EIP_NEXT(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                             %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) {
+
+    ; obtain the data that the EIP is pointing at
+    %EIP.ptr = getelementptr %exec.ptr* %EIP.ptr.ptr, i32 0
+    %EIP.ins.ptr.ptr = load %exec.ptr* %EIP.ptr
+    %EIP.ins.ptr = getelementptr %exec.ptr %EIP.ins.ptr.ptr, i32 0
+    %EIP.ins = load %exec.ptr %EIP.ins.ptr
+
+    ; increment our EIP now that we've got our data
+    %newEip.ptr = alloca %int
+    call cc 10 void @_EIP_INCR(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                         %ret.ptr* %RSP.ptr.ptr, %int* %newEip.ptr)
+
+    ; finalize our state and return our instruction
+    store %exec %EIP.ins, %int* %DATA.ptr
+
+    ret void
+}
+
+define cc 10 void @_EIP_PEEK(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                             %ret.ptr* %RSP.ptr.ptr, %addr* %DATA.ptr) {
+    ; obtain the data that the EIP is pointing at
+    %EIP.ptr = getelementptr %exec.ptr* %EIP.ptr.ptr, i32 0
+    %EIP.ins.ptr.ptr = load %exec.ptr* %EIP.ptr
+    %EIP.ins.ptr = getelementptr %exec.ptr %EIP.ins.ptr.ptr, i32 0
+    %EIP.ins = load %exec.ptr %EIP.ins.ptr
+
+    ; finalize our state and return our instruction
+    store %exec %EIP.ins, %int* %DATA.ptr
+
+    ret void
+}
+
+define cc 10 void @_EIP_JMP(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                        %ret.ptr* %RSP.ptr.ptr, %addr* %DATA.ptr) {
+    %EIP.new = load %addr* %DATA.ptr
+    %EIP.new.ptr = inttoptr %addr %EIP.new to %exec.ptr
+
+    ; store the new EIP
+    %EIP.ptr = getelementptr %exec.ptr* %EIP.ptr.ptr, i32 0
+    %EIP.ins.ptr.ptr = load %exec.ptr* %EIP.ptr
+    %EIP.ins.ptr = getelementptr %exec.ptr %EIP.ins.ptr.ptr, i32 0
+    store %exec.ptr %EIP.new.ptr, %exec.ptr* %EIP.ptr.ptr
+
+    ; execute our new instruction under the EIP
+    call cc 10 void @next(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                          %ret.ptr* %RSP.ptr.ptr, %addr* %DATA.ptr)
+
+    ret void
+}
+
+define cc 10 void @_EIP_EXEC(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                             %ret.ptr* %RSP.ptr.ptr, %addr* %DATA.ptr) {
+    ; obtain the data that the EIP is pointing at
+    %EIP.ptr = getelementptr %exec.ptr* %EIP.ptr.ptr, i32 0
+    %EIP.ins.ptr.ptr = load %exec.ptr* %EIP.ptr
+    %EIP.ins.ptr = getelementptr %exec.ptr %EIP.ins.ptr.ptr, i32 0
+    %EIP.ins = load %exec.ptr %EIP.ins.ptr
+
+    ; resolve and execute our instruction under the EIP
+    %functionPtr = inttoptr %int %EIP.ins to void (%cell.ptr*,
+        %exec.ptr*, %ret.ptr*, %int*)*
+    call void %functionPtr(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                           %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr)
+
+    ret void
+}
+
+define cc 10 void @next(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                        %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) {
     ; c"EXEC:"
     %execString = getelementptr [6 x i8]* @execString, i32 0, i32 0
+    %nxtIns.ptr = alloca %int
+    call cc 10 void @_EIP_PEEK(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                               %ret.ptr* %RSP.ptr.ptr, %addr* %nxtIns.ptr)
+    call cc 10 void @_EIP_INCR(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                               %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr)
+    %nxtIns.value = load %int* %nxtIns.ptr
 
-    %ins = call %int @nextExec()
-    %is_done = icmp eq %int %ins, 0
-    br i1 %is_done, label %done, label %execIns
+    %is_done.flag = icmp eq %int %nxtIns.value, 0
+    br i1 %is_done.flag, label %done, label %execIns
 
 execIns:
-    ;%currToken = call %strbuf @lookupFn(%int %ins)
-    ;call void @printTwoString(%strbuf %execString, %strbuf %currToken)
-
-    %functionPtr = inttoptr %int %ins to void ()*
-    call void %functionPtr()
-    ret void    
+    %functionPtr = inttoptr %int %nxtIns.value to void (%cell.ptr*,
+        %exec.ptr*, %ret.ptr*, %int*)*
+    call void %functionPtr(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                           %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr)
+    ret void
 
 done:
     ret void
@@ -300,8 +658,8 @@ printWord:
     ; obtain our function pointer, dereference it, and conver the pointer to
     ; an int for human representation
     %forthFn.ptr.ptr = getelementptr %WORD* %currWord.ptr, i32 0, i32 1
-    %forthFn.ptr = load void()** %forthFn.ptr.ptr
-    %forthFn.ptr.int = ptrtoint void()* %forthFn.ptr to %int
+    %forthFn.ptr = load %FNPTR* %forthFn.ptr.ptr
+    %forthFn.ptr.int = ptrtoint %FNPTR %forthFn.ptr to %int
 
     ; print our pretty dictionary order
     %printf_ret = call i32 (i8*, ... )* @printf(i8* %dictNavString.ptr,
@@ -346,8 +704,8 @@ begin:
     br i1 %is_null, label %notFound, label %checkWord
 checkWord:
     %currFn.ptr.ptr = getelementptr %WORD* %currDictWord.ptr, i32 0, i32 1
-    %currFn.ptr = load void()** %currFn.ptr.ptr
-    %currFn.ptr.value = ptrtoint void()* %currFn.ptr to %int
+    %currFn.ptr = load %FNPTR* %currFn.ptr.ptr
+    %currFn.ptr.value = ptrtoint %FNPTR %currFn.ptr to %int
 
     %is_fn.flag = icmp eq %int %fnPntr.value, %currFn.ptr.value
     br i1 %is_fn.flag, label %returnFnString, label %nextFn
@@ -583,7 +941,7 @@ handleToken:
     ; call void @printTwoString(i8* %charString.ptr, i8* %currToken.ptr)
 
     ; lookup our token in the dictionary
-    %forthFn.ptr = call void ()* (i8*)* @lookupDictionary(i8* %currToken.ptr)
+    %forthFn.ptr = call %FNPTR (i8*)* @lookupDictionary(i8* %currToken.ptr)
 
     ; load our current heap index for inserting a pointer or a literal
     %currHeapIdx.value = load %int* %currHeapIdx.ptr
@@ -669,7 +1027,7 @@ nextLitChr:
 
 insertLiteral:
     ; insert our _LIT function into the heap
-    call fastcc void @insertToken(%int %currHeapIdx.value, %FNPTR @LIT)
+    call fastcc void @insertToken(%int %currHeapIdx.value, %FNPTR @_LIT)
     %newHeapIdx.value.insertLiteral = add %int %currHeapIdx.value, 1
 
     ; Now that we have our constructed literal, insert it into the heap
@@ -704,14 +1062,11 @@ advanceIdx:
     br label %beginToken
 
 invalidLiteral:
-    ;call void @printValueInt(%int 9999999)
     br label %done
 
 done:
     %currHeapIdx.value.done = load %pntr %currHeapIdx.ptr
-    ;%nullIdx.value = sub %int %currHeapIdx.value.done, 1
-
-    call void @printValueInt( %int %currHeapIdx.value.done )
+    ;call void @printValueInt( %int %currHeapIdx.value.done )
 
     ; clean up by terminating our compiled output with a null byte
     call fastcc void @insertLiteral(%int %currHeapIdx.value.done,
@@ -724,117 +1079,196 @@ done:
 ; utility routine to show the current contents of our stack
 ; *****************************************************************************
 
-define void @showStack() {
-    %stack_string = getelementptr [13 x i8]* @stackString, i64 0, i64 0
+define cc 10 void @showStack(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                             %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) {
+    %stack_string = getelementptr [14 x i8]* @stackString, i64 0, i64 0
 
-    ; set up our loop with the current stack pointer
-    %currStackIdx = alloca %int
-    %getStackIdx = load %pntr @stackIdx
-    store %int %getStackIdx, %pntr %currStackIdx
+    ; obtain the address of the bottom of our stack
+    %SP0.stack.ptr = load %cell.ptr* @SP0
+    %SP0.stack.addr.ptr = getelementptr %addr.ptr %SP0.stack.ptr, i32 0
+    %SP0.addr = ptrtoint %addr.ptr %SP0.stack.addr.ptr to %addr
 
-    ; we need the heap size to figure out how deep our stack currently is
-    %heapSize = load %pntr @heapSize
+    %null.ptr = alloca %cell
+    %SSP.addr.ptr = alloca %addr 
+    %cell.value.ptr = alloca %cell
+
+    ; obtain the stack position that SP is pointing at
+    ; SP@ -> stack
+    call cc 10 void @_SP_AT(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                            %ret.ptr* %RSP.ptr.ptr, %int* %null.ptr)
+
+    ; POP -> %SP.addr
+    call cc 10 void @_SP_POP(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                             %ret.ptr* %RSP.ptr.ptr, %int* %SSP.addr.ptr)
 
     ; kick off the loop
     br label %loop
 
 loop:
-    ; load our current stack index into a temporary value
-    %stackIdx = load %pntr %currStackIdx
-    ; check if the stack index has reached the heap size yet
-    %is_done = icmp uge %int %stackIdx, %heapSize
-    br i1 %is_done, label %done, label %continue_loop
+    %SSP.addr = load %addr* %SSP.addr.ptr
+    %is_done.flag = icmp eq %int %SSP.addr, %SP0.addr
+    br i1 %is_done.flag, label %done, label %continue_loop
 
 continue_loop:
-    ; call our getHeap routine to get the stack value under the index pointer
-    %currStackValue = call fastcc %int @getHeap(%int %stackIdx)
+    ; push our current show stack address onto the stack
+    call cc 10 void @_SP_PUSH(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                              %ret.ptr* %RSP.ptr.ptr, %int* %SSP.addr.ptr)
 
-    ; compute our distance relative to the end of the heap for the stack pos
-    %relStackIdx = sub %int %heapSize, %stackIdx
+    ; resolve the memory location and retrieve the item onto the stack
+    call cc 10 void @_C_AT(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                           %ret.ptr* %RSP.ptr.ptr, %int* %null.ptr)
 
-    ; call out to printf with our pair of values
-    call i32 (i8*, ... )* @printf(i8* %stack_string, %cell %relStackIdx,
-        %int %currStackValue)
+    ; pop the memory cell we just retrieved into our cell value pointer
+    call cc 10 void @_SP_POP(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                             %ret.ptr* %RSP.ptr.ptr, %int* %cell.value.ptr)
 
-    ; increment and store our new stack index value, starting the loop again
-    %newStackIdx = add %int %stackIdx, 1
-    store %int %newStackIdx, %pntr %currStackIdx
+    ; report our current stack address and item
+    %cell.value = load %cell* %cell.value.ptr
+    %printf_ret = call i32 (i8*, ... )* @printf(i8* %stack_string,
+                                                %int %SSP.addr, 
+                                                %int %cell.value)
+
+    ; increment and store our new stack location, starting the loop again
+    %SSP.new.value = add %int %SSP.addr, 8
+    store %int %SSP.new.value, %addr.ptr %SSP.addr.ptr
     br label %loop
 
 done:
     ret void
-
 }
 
 ; *****************************************************************************
 ; here be FORTH words now
 ; *****************************************************************************
 
-define fastcc void @LIT() noreturn {
-    %execIdx.value = load %pntr @execIdx
-    %ahead.value = call fastcc %cell @getHeap(%int %execIdx.value)
-    call fastcc void @pushStack(%cell %ahead.value)
-    %execIdxIncr.value = add %int %execIdx.value, 1
-    store %int %execIdxIncr.value, %pntr @execIdx
-    call fastcc void @next() noreturn
+define cc 10 void @_LIT(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                        %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) {
+    ; get the value under our EIP
+    %nullValue.ptr = alloca %cell
+    %litValue.ptr = alloca %cell
+    call cc 10 void @_EIP_PEEK(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                               %ret.ptr* %RSP.ptr.ptr, %addr* %litValue.ptr)
+    ; push it onto our stack
+    call cc 10 void @_SP_PUSH(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                              %ret.ptr* %RSP.ptr.ptr, %int* %litValue.ptr)
+    ; advance our EIP now
+    call cc 10 void @_EIP_INCR(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                               %ret.ptr* %RSP.ptr.ptr, %int* %nullValue.ptr)
+    call cc 10 void @next(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                           %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr)
+
     ret void
 }
 
-define fastcc void @SWAP() noreturn {
-    %first = tail call fastcc %cell @popStack()
-    %second = tail call fastcc %cell @popStack()
-    tail call fastcc void @pushStack(%cell %first)
-    tail call fastcc void @pushStack(%cell %second)
-    call fastcc void @next() noreturn
+define cc 10 void @SWAP(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                        %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) {
+    ; call the intrinsic SWAP
+    call cc 10 void @_SP_SWAP(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                              %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr)
+    call cc 10 void @next(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                           %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr)
+
     ret void
 }
 
-define fastcc void @DUP() noreturn {
-    %first = tail call fastcc %cell @getTopStack()
-    tail call fastcc void @pushStack(%cell %first)
-    call fastcc void @next() noreturn
+define cc 10 void @DUP(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                       %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) {
+    ; call the intrinsic DUP
+    call cc 10 void @_SP_DUP(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                              %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr)
+    call cc 10 void @next(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                           %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr)
+
     ret void
 }
 
-define fastcc void @ADD() noreturn {
-    %first = tail call fastcc %cell @popStack()
-    %second = tail call fastcc %cell @popStack()
-    %result = add %cell %first, %second
-    tail call fastcc void @pushStack(%cell %result)
-    call fastcc void @next() noreturn
+define cc 10 void @ADD(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                       %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) {
+    %first.ptr = alloca %cell
+    %second.ptr = alloca %cell
+    %result.ptr = alloca %cell
+    call cc 10 void @_SP_POP(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                             %ret.ptr* %RSP.ptr.ptr, %int* %first.ptr)
+    call cc 10 void @_SP_POP(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                             %ret.ptr* %RSP.ptr.ptr, %int* %second.ptr)
+    %first.value = load %cell* %first.ptr
+    %second.value = load %cell* %second.ptr
+    %result.value = add %cell %first.value, %second.value
+    store %cell %result.value, %cell* %result.ptr
+    call cc 10 void @_SP_PUSH(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                              %ret.ptr* %RSP.ptr.ptr, %int* %result.ptr)
+    call cc 10 void @next(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                           %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr)
     ret void
 }
 
-define fastcc void @SUB() noreturn {
-    %first = tail call fastcc %cell @popStack()
-    %second = tail call fastcc %cell @popStack()
-    %result = sub %cell %second, %first
-    tail call fastcc void @pushStack(%cell %result)
-    call fastcc void @next() noreturn
+define cc 10 void @SUB(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                       %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) {
+    %first.ptr = alloca %cell
+    %second.ptr = alloca %cell
+    %result.ptr = alloca %cell
+    call cc 10 void @_SP_POP(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                             %ret.ptr* %RSP.ptr.ptr, %int* %first.ptr)
+    call cc 10 void @_SP_POP(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                             %ret.ptr* %RSP.ptr.ptr, %int* %second.ptr)
+    %first.value = load %cell* %first.ptr
+    %second.value = load %cell* %second.ptr
+    %result.value = sub %cell %second.value, %first.value
+    store %cell %result.value, %cell* %result.ptr
+    call cc 10 void @_SP_PUSH(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                              %ret.ptr* %RSP.ptr.ptr, %int* %result.ptr)
+    call cc 10 void @next(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                           %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr)
     ret void
 }
 
-define fastcc void @MUL() noreturn {
-    %first = tail call fastcc %cell @popStack()
-    %second = tail call fastcc %cell @popStack()
-    %result = mul %cell %first, %second
-    tail call fastcc void @pushStack(%cell %result)
-    call fastcc void @next() noreturn
+define cc 10 void @MUL(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                       %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) {
+    %first.ptr = alloca %cell
+    %second.ptr = alloca %cell
+    %result.ptr = alloca %cell
+    call cc 10 void @_SP_POP(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                             %ret.ptr* %RSP.ptr.ptr, %int* %first.ptr)
+    call cc 10 void @_SP_POP(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                             %ret.ptr* %RSP.ptr.ptr, %int* %second.ptr)
+    %first.value = load %cell* %first.ptr
+    %second.value = load %cell* %second.ptr
+    %result.value = mul %cell %first.value, %second.value
+    store %cell %result.value, %cell* %result.ptr
+    call cc 10 void @_SP_PUSH(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                              %ret.ptr* %RSP.ptr.ptr, %int* %result.ptr)
+    call cc 10 void @next(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                           %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr)
     ret void
 }
 
-define fastcc void @DIV() noreturn {
-    %first = tail call fastcc %cell @popStack()
-    %second = tail call fastcc %cell @popStack()
-    %result = udiv %cell %second, %first
-    tail call fastcc void @pushStack(%cell %result)
-    call fastcc void @next() noreturn
+define cc 10 void @DIV(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                       %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) {
+    %first.ptr = alloca %cell
+    %second.ptr = alloca %cell
+    %result.ptr = alloca %cell
+    call cc 10 void @_SP_POP(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                             %ret.ptr* %RSP.ptr.ptr, %int* %first.ptr)
+    call cc 10 void @_SP_POP(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                             %ret.ptr* %RSP.ptr.ptr, %int* %second.ptr)
+    %first.value = load %cell* %first.ptr
+    %second.value = load %cell* %second.ptr
+    %result.value = udiv %cell %second.value, %first.value
+    store %cell %result.value, %cell* %result.ptr
+    call cc 10 void @_SP_PUSH(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                              %ret.ptr* %RSP.ptr.ptr, %int* %result.ptr)
+    call cc 10 void @next(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                           %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr)
     ret void
 }
 
-define fastcc void @DISPSTACK() noreturn {
-    call fastcc void @showStack()
-    call fastcc void @next() noreturn
+define cc 10 void @DISPSTACK(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                             %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) {
+    call cc 10 void @showStack(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                               %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr)
+    call cc 10 void @next(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                           %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr)
+
     ret void
 }
 
@@ -842,7 +1276,8 @@ define fastcc void @DISPSTACK() noreturn {
 ; user interaction
 ; *****************************************************************************
 
-define void @repl() {
+define cc 10 void @repl(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                        %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) {
     %promptString.ptr = getelementptr [5 x i8]* @promptString, i32 0, i32 0
 
     %currChr.ptr = alloca i8
@@ -883,11 +1318,16 @@ execBuffer:
     ; compile our input into the beginning of our heap
     call void @compile(i8* %inputBuffer.ptr, %int 0)
 
-    ; reset our execution pointer to 0
-    store %int 0, %pntr @execIdx
-
     ; kick off our compiled program
-    call fastcc void @next()
+    %jmp.addr.ptr = alloca %exec
+    ; load our heap pointer, which is stored as a pointer
+    %heap.ptr = load %pntr* @HEAP
+    %heap.value.ptr = getelementptr %pntr %heap.ptr, %int 0
+    %jmp.addr = ptrtoint %pntr %heap.value.ptr to %int
+    store %int %jmp.addr, %exec* %jmp.addr.ptr
+
+    call cc 10 void @_EIP_JMP(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                              %ret.ptr* %RSP.ptr.ptr, %int* %jmp.addr.ptr)
 
     ; reset our input buffer pointer to 0
     store i16 0, i16* %inputBufferIdx.ptr
@@ -902,23 +1342,43 @@ execBuffer:
 ; *****************************************************************************
 
 define %int @main() {
-    ; we allocate our default of 1MB heap
-    %heapSizePtr = alloca %int
-    store %int 0, %pntr %heapSizePtr
-    %initHeapSize = load %pntr %heapSizePtr
-    %heapSize = add %int %initHeapSize, 1048576
-    store %int %heapSize, %pntr @heapSize
+    ; our registers that we pass to every Forth function using Haskell CC
+    %SP = alloca %cell.ptr
+    %EIP = alloca %cell.ptr
+    %RSP = alloca %cell.ptr
+    %DATA = alloca %cell
 
-    ; stack pointer begins at the end of the heap
-    store %int %heapSize, %pntr @stackIdx
-    ; execution starts at the beginning of the heap
-    store %int 0, %pntr @execIdx
+    ; local reference to the @SP0 global
+    %SP0 = alloca %cell.ptr
 
-    ; allocate our actual heap
-    %heapPtr = alloca %int, %int %heapSize
+    ; allocate our heap - 8MB
+    %heap.ptr = alloca %cell, i32 1048576
+    %heap.addr = ptrtoint %cell* %heap.ptr to %int
+    ; set up our stack at the end of the heap
+    %SP.ptr =  getelementptr %cell.ptr %heap.ptr, i32 1048575
+    %SP0.ptr = getelementptr %cell.ptr %heap.ptr, i32 1048575
+    store %cell.ptr %SP.ptr, %cell.ptr* %SP
+    store %cell.ptr %SP0.ptr, %cell.ptr* @SP0
+    store %cell 0, %cell.ptr %SP.ptr
+
+    ; set our EIP at the beginning
+    %EIP.ptr = getelementptr %cell.ptr %heap.ptr, i32 0
+    store %cell.ptr %EIP.ptr, %cell.ptr* %EIP
+    store %cell 0, %cell.ptr %EIP.ptr
+
+    call void @printEIPPtr( %cell.ptr* %EIP )
+    call void @printStackPtrValues( %cell.ptr* %SP )
+
+    ; RSP isn't used yet, but we set it anyway
+    %RSP.ptr = getelementptr %cell.ptr %heap.ptr, i32 511
+    store %cell.ptr %RSP.ptr, %cell.ptr* %RSP
 
     ; store the pointer to our heap in a global value
-    store %pntr %heapPtr, %pntr* @heapPtr
+    store %pntr %heap.ptr, %pntr* @HEAP
+
+    ; *************************************************************************
+    ; register our Forth functions in the dictionary
+    ; *************************************************************************
 
     ; .s - @DISPSTACK
     %ptr_dispStack = getelementptr [ 3 x i8 ]* @str_dispStack, i32 0
@@ -966,7 +1426,7 @@ define %int @main() {
     %dictEntry.lit = alloca %WORD
     call void @registerDictionary( i8* %i8_lit,  
                                    %WORD* %dictEntry.lit,
-                                   %FNPTR @LIT )
+                                   %FNPTR @_LIT )
 
     ; swap - @SWAP
     %ptr_swap = getelementptr [ 5 x i8 ]* @str_swap, i32 0
@@ -993,9 +1453,11 @@ define %int @main() {
     call void @compile(i8* %i8_testProgram, %int 0)
 
     ; ** and finally, execute our program
-    call fastcc void @next()
+    call cc 10 void @next(%cell.ptr* %SP, %cell.ptr* %EIP,
+                          %cell.ptr* %RSP, %cell* %DATA)
 
-    call void @repl()
+    call cc 10 void @repl(%cell.ptr* %SP, %cell.ptr* %EIP,
+                          %cell.ptr* %RSP, %cell* %DATA)
 
     ret %int 0
 }
