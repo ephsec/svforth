@@ -1243,6 +1243,27 @@ define cc 10 void @C_BANG(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
     ret void
 }
 
+define cc 10 void @SP_AT(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                        %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) {
+    ; call the intrinsic operator
+    call cc 10 void @_SP_AT(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                           %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr)
+    call cc 10 void @next(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                           %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr)
+
+    ret void
+}
+
+define cc 10 void @SP_BANG(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                        %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) {
+    ; call the intrinsic operator
+    call cc 10 void @_SP_POP(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                             %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr)
+    call cc 10 void @next(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                           %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr)
+
+    ret void
+}
 
 ; ****************************************************************************
 ; ALU stuff
@@ -1681,6 +1702,22 @@ define %int @main() {
     call void @registerDictionary( i8* %i8_drop,  
                                    %WORD* %dictEntry.drop,
                                    %FNPTR @DROP )
+
+    ; SP@ -- @C_BANG
+    %ptr_sp_at = getelementptr [ 4 x i8 ]* @str_sp_at, i32 0
+    %i8_sp_at = bitcast [ 4 x i8 ]* %ptr_sp_at to i8*
+    %dictEntry.sp_at = alloca %WORD
+    call void @registerDictionary( i8* %i8_sp_at,  
+                                   %WORD* %dictEntry.sp_at,
+                                   %FNPTR @SP_AT )
+
+    ; SP! -- @SP_BANG
+    %ptr_sp_bang = getelementptr [ 4 x i8 ]* @str_sp_bang, i32 0
+    %i8_sp_bang = bitcast [ 4 x i8 ]* %ptr_sp_bang to i8*
+    %dictEntry.sp_bang = alloca %WORD
+    call void @registerDictionary( i8* %i8_sp_bang,  
+                                   %WORD* %dictEntry.sp_bang,
+                                   %FNPTR @C_AT )
 
     ; C@ -- @C_AT
     %ptr_c_at = getelementptr [ 3 x i8 ]* @str_c_at, i32 0
