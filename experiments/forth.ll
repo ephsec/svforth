@@ -347,7 +347,7 @@ define cc 10 void @_SP_AT(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
 ;   SWAP                        ( n1 n2 -- n2 n1 )
 ;   INTERNAL: swap the topmost two elements of the stack
 define cc 10 void @_SP_SWAP(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
-                           %ret.ptr* %RSP.ptr.ptr, %cell* %DATA.ptr) {
+                           %ret.ptr* %RSP.ptr.ptr) {
     %first.ptr = alloca %cell
     %second.ptr = alloca %cell
     call cc 10 void @_SP_POP(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
@@ -364,7 +364,7 @@ define cc 10 void @_SP_SWAP(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
 ;   OVER                        ( n1 n2 -- n1 n2 n1 )
 ;   INTERNAL: copy the second value on the stack into the front of the stack
 define cc 10 void @_SP_OVER(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
-                           %ret.ptr* %RSP.ptr.ptr, %cell* %DATA.ptr) {
+                           %ret.ptr* %RSP.ptr.ptr) {
     %first.ptr = alloca %cell
     %second.ptr = alloca %cell
     call cc 10 void @_SP_POP(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
@@ -444,7 +444,7 @@ define cc 10 void @_SP_DECR(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
 
 ; C!                          ( c a -- ) 
 define cc 10 void @_C_BANG(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
-                         %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) {
+                         %ret.ptr* %RSP.ptr.ptr) {
     %address.cell.ptr = alloca %cell
     %value.cell.ptr   = alloca %cell
 
@@ -463,7 +463,7 @@ define cc 10 void @_C_BANG(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
 
 ; C@                          ( a -- c )
 define cc 10 void @_C_AT(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
-                         %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) {
+                         %ret.ptr* %RSP.ptr.ptr) {
     %address.cell.ptr = alloca %cell
     %value.cell.ptr =   alloca %cell
 
@@ -487,7 +487,7 @@ define cc 10 void @_C_AT(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
 ; ****************************************************************************
 
 define cc 10 void @_EIP_INCR(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
-                             %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) {
+                             %ret.ptr* %RSP.ptr.ptr) {
     ; resolve our current EIP
     %EIP.ptr = getelementptr %exec.ptr* %EIP.ptr.ptr, i32 0
     %EIP.value.ptr = load %exec.ptr* %EIP.ptr
@@ -514,9 +514,8 @@ define cc 10 void @_EIP_NEXT(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
     %EIP.ins = load %exec.ptr %EIP.ins.ptr
 
     ; increment our EIP now that we've got our data
-    %newEip.ptr = alloca %int
     call cc 10 void @_EIP_INCR(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
-                         %ret.ptr* %RSP.ptr.ptr, %int* %newEip.ptr)
+                         %ret.ptr* %RSP.ptr.ptr)
 
     ; finalize our state and return our instruction
     store %exec %EIP.ins, %int* %DATA.ptr
@@ -551,7 +550,7 @@ define cc 10 void @_EIP_JMP(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
 
     ; execute our new instruction under the EIP
     call cc 10 void @next(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
-                          %ret.ptr* %RSP.ptr.ptr, %addr* %DATA.ptr)
+                          %ret.ptr* %RSP.ptr.ptr, %addr* %DATA.ptr) noreturn
 
     ret void
 }
@@ -568,7 +567,7 @@ define cc 10 void @_EIP_EXEC(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
     %functionPtr = inttoptr %int %EIP.ins to void (%cell.ptr*,
         %exec.ptr*, %ret.ptr*, %int*)*
     call void %functionPtr(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
-                           %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr)
+                           %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) noreturn
 
     ret void
 }
@@ -581,7 +580,7 @@ define cc 10 void @next(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
     call cc 10 void @_EIP_PEEK(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
                                %ret.ptr* %RSP.ptr.ptr, %addr* %nxtIns.ptr)
     call cc 10 void @_EIP_INCR(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
-                               %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr)
+                               %ret.ptr* %RSP.ptr.ptr)
     %nxtIns.value = load %int* %nxtIns.ptr
 
     %is_done.flag = icmp eq %int %nxtIns.value, 0
@@ -591,7 +590,7 @@ execIns:
     %functionPtr = inttoptr %int %nxtIns.value to void (%cell.ptr*,
         %exec.ptr*, %ret.ptr*, %int*)*
     call void %functionPtr(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
-                           %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr)
+                           %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) noreturn
     ret void
 
 done:
@@ -1144,7 +1143,7 @@ continue_loop:
 
     ; resolve the memory location and retrieve the item onto the stack
     call cc 10 void @_C_AT(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
-                           %ret.ptr* %RSP.ptr.ptr, %int* %null.ptr)
+                           %ret.ptr* %RSP.ptr.ptr)
 
     ; pop the memory cell we just retrieved into our cell value pointer
     call cc 10 void @_SP_POP(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
@@ -1170,7 +1169,7 @@ done:
 ; *****************************************************************************
 
 define cc 10 void @_LIT(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
-                        %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) {
+                        %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) noreturn {
     ; get the value under our EIP
     %nullValue.ptr = alloca %cell
     %litValue.ptr = alloca %cell
@@ -1181,86 +1180,86 @@ define cc 10 void @_LIT(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
                               %ret.ptr* %RSP.ptr.ptr, %int* %litValue.ptr)
     ; advance our EIP now
     call cc 10 void @_EIP_INCR(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
-                               %ret.ptr* %RSP.ptr.ptr, %int* %nullValue.ptr)
+                               %ret.ptr* %RSP.ptr.ptr)
     call cc 10 void @next(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
-                           %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr)
+                           %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) noreturn
 
     ret void
 }
 
 define cc 10 void @SWAP(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
-                        %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) {
+                        %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) noreturn {
     ; call the intrinsic SWAP
     call cc 10 void @_SP_SWAP(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
-                              %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr)
+                              %ret.ptr* %RSP.ptr.ptr)
     call cc 10 void @next(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
-                           %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr)
+                           %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) noreturn
 
     ret void
 }
 
 define cc 10 void @DUP(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
-                       %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) {
+                       %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) noreturn {
     ; call the intrinsic DUP
     call cc 10 void @_SP_DUP(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
                               %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr)
     call cc 10 void @next(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
-                           %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr)
+                           %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) noreturn
 
     ret void
 }
 
 define cc 10 void @DROP(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
-                       %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) {
+                       %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) noreturn {
     ; call the intrinsic increment stack operator, to 'drop' the current item
     call cc 10 void @_SP_INCR(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
                               %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr)
     call cc 10 void @next(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
-                           %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr)
+                           %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) noreturn
 
     ret void
 }
 
 define cc 10 void @C_AT(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
-                        %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) {
+                        %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) noreturn {
     ; call the intrinsic operator
     call cc 10 void @_C_AT(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
-                           %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr)
+                           %ret.ptr* %RSP.ptr.ptr)
     call cc 10 void @next(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
-                           %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr)
+                           %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) noreturn
 
     ret void
 }
 
 define cc 10 void @C_BANG(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
-                          %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) {
+                          %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) noreturn {
     ; call the intrinsic operator
     call cc 10 void @_C_BANG(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
-                             %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr)
+                             %ret.ptr* %RSP.ptr.ptr)
     call cc 10 void @next(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
-                           %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr)
+                           %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) noreturn
 
     ret void
 }
 
 define cc 10 void @SP_AT(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
-                        %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) {
+                        %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) noreturn {
     ; call the intrinsic operator
     call cc 10 void @_SP_AT(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
                            %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr)
     call cc 10 void @next(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
-                           %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr)
+                           %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) noreturn
 
     ret void
 }
 
 define cc 10 void @SP_BANG(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
-                        %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) {
+                        %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) noreturn {
     ; call the intrinsic operator
     call cc 10 void @_SP_POP(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
                              %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr)
     call cc 10 void @next(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
-                           %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr)
+                           %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) noreturn
 
     ret void
 }
@@ -1270,64 +1269,64 @@ define cc 10 void @SP_BANG(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
 ; ****************************************************************************
 
 define cc 10 void @CHAR_MIN(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
-                            %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) {
+                            %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) noreturn {
     %charSize.ptr = alloca %cell
     store %cell 1, %cell* %charSize.ptr
     call cc 10 void @_SP_PUSH(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
                               %ret.ptr* %RSP.ptr.ptr, %int* %charSize.ptr)
     call cc 10 void @SUB(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
-                         %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr)
+                         %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) noreturn
     ret void
 }
 
 define cc 10 void @CHAR_PLUS(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
-                            %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) {
+                            %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) noreturn {
     %charSize.ptr = alloca %cell
     store %cell 1, %cell* %charSize.ptr
     call cc 10 void @_SP_PUSH(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
                               %ret.ptr* %RSP.ptr.ptr, %int* %charSize.ptr)
     call cc 10 void @ADD(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
-                         %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr)
+                         %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) noreturn
     ret void
 }
 
 ; chars is a no-op as our addressing and indexing is int8
 define cc 10 void @CHARS(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
-                            %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) {
+                            %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) noreturn {
     call cc 10 void @next(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
-                           %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr)
+                           %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) noreturn
     ret void
 }
 
 define cc 10 void @CELL_MIN(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
-                            %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) {
+                            %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) noreturn {
     call cc 10 void @_SP_PUSH(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
                               %ret.ptr* %RSP.ptr.ptr, %int* @CELLSIZE)
     call cc 10 void @SUB(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
-                         %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr)
+                         %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) noreturn
     ret void
 }
 
 define cc 10 void @CELL_PLUS(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
-                             %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) {
+                             %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) noreturn {
     call cc 10 void @_SP_PUSH(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
                               %ret.ptr* %RSP.ptr.ptr, %int* @CELLSIZE)
     call cc 10 void @ADD(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
-                         %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr)
+                         %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) noreturn
     ret void
 }
 
 define cc 10 void @CELLS(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
-                         %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) {
+                         %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) noreturn {
     call cc 10 void @_SP_PUSH(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
                               %ret.ptr* %RSP.ptr.ptr, %int* @CELLSIZE)
     call cc 10 void @MUL(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
-                         %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr)
+                         %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) noreturn
     ret void
 }
 
 define cc 10 void @NONZERO(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
-                           %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) {
+                           %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) noreturn {
     call cc 10 void @_SP_POP(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
                              %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr)
     %DATA.value = load %int* %DATA.ptr
@@ -1337,12 +1336,12 @@ define cc 10 void @NONZERO(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
     call cc 10 void @_SP_PUSH(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
                               %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr)
     call cc 10 void @next(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
-                           %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr)
+                           %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) noreturn
     ret void
 }
 
 define cc 10 void @AND(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
-                           %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) {
+                           %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) noreturn {
     %first.ptr = alloca %int
     %second.ptr = alloca %int
     call cc 10 void @_SP_POP(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
@@ -1356,12 +1355,12 @@ define cc 10 void @AND(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
     call cc 10 void @_SP_PUSH(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
                               %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr)
     call cc 10 void @next(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
-                           %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr)
+                           %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) noreturn
     ret void
 }
 
 define cc 10 void @OR(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
-                      %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) {
+                      %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) noreturn {
     %first.ptr = alloca %int
     %second.ptr = alloca %int
     call cc 10 void @_SP_POP(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
@@ -1375,12 +1374,12 @@ define cc 10 void @OR(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
     call cc 10 void @_SP_PUSH(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
                               %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr)
     call cc 10 void @next(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
-                           %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr)
+                           %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) noreturn
     ret void
 }
 
 define cc 10 void @XOR(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
-                       %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) {
+                       %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) noreturn {
     %first.ptr = alloca %int
     %second.ptr = alloca %int
     call cc 10 void @_SP_POP(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
@@ -1394,12 +1393,12 @@ define cc 10 void @XOR(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
     call cc 10 void @_SP_PUSH(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
                               %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr)
     call cc 10 void @next(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
-                           %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr)
+                           %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) noreturn
     ret void
 }
 
 define cc 10 void @UMPLUS(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
-                          %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) {
+                          %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) noreturn {
     %first.ptr = alloca %cell
     %second.ptr = alloca %cell
     %result.ptr = alloca %cell
@@ -1421,12 +1420,12 @@ define cc 10 void @UMPLUS(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
     call cc 10 void @_SP_PUSH(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
                               %ret.ptr* %RSP.ptr.ptr, %int* %carry.ptr)
     call cc 10 void @next(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
-                           %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr)
+                           %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) noreturn
     ret void
 }
 
 define cc 10 void @ADD(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
-                       %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) {
+                       %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) noreturn {
     %first.ptr = alloca %cell
     %second.ptr = alloca %cell
     %result.ptr = alloca %cell
@@ -1441,12 +1440,12 @@ define cc 10 void @ADD(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
     call cc 10 void @_SP_PUSH(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
                               %ret.ptr* %RSP.ptr.ptr, %int* %result.ptr)
     call cc 10 void @next(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
-                           %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr)
+                           %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) noreturn
     ret void
 }
 
 define cc 10 void @SUB(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
-                       %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) {
+                       %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) noreturn {
     %first.ptr = alloca %cell
     %second.ptr = alloca %cell
     %result.ptr = alloca %cell
@@ -1461,12 +1460,12 @@ define cc 10 void @SUB(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
     call cc 10 void @_SP_PUSH(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
                               %ret.ptr* %RSP.ptr.ptr, %int* %result.ptr)
     call cc 10 void @next(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
-                           %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr)
+                           %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) noreturn
     ret void
 }
 
 define cc 10 void @MUL(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
-                       %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) {
+                       %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) noreturn {
     %first.ptr = alloca %cell
     %second.ptr = alloca %cell
     %result.ptr = alloca %cell
@@ -1481,12 +1480,12 @@ define cc 10 void @MUL(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
     call cc 10 void @_SP_PUSH(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
                               %ret.ptr* %RSP.ptr.ptr, %int* %result.ptr)
     call cc 10 void @next(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
-                           %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr)
+                           %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) noreturn
     ret void
 }
 
 define cc 10 void @DIV(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
-                       %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) {
+                       %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) noreturn {
     %first.ptr = alloca %cell
     %second.ptr = alloca %cell
     %result.ptr = alloca %cell
@@ -1501,16 +1500,16 @@ define cc 10 void @DIV(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
     call cc 10 void @_SP_PUSH(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
                               %ret.ptr* %RSP.ptr.ptr, %int* %result.ptr)
     call cc 10 void @next(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
-                           %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr)
+                           %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) noreturn
     ret void
 }
 
 define cc 10 void @DISPSTACK(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
-                             %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) {
+                             %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) noreturn {
     call cc 10 void @showStack(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
                                %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr)
     call cc 10 void @next(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
-                           %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr)
+                           %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) noreturn
 
     ret void
 }
