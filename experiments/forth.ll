@@ -203,6 +203,8 @@ define cc 10 void @printStackPush(%int %addr, %int %value) {
 
 ; * constants containing strings of Forth words
 @str_dispStack = internal constant [ 3 x i8 ] c".s\00"
+@str_c_at =      internal constant [ 3 x i8 ] c"C@\00"
+@str_c_bang =    internal constant [ 3 x i8 ] c"C!\00"
 @str_sp_at =     internal constant [ 4 x i8 ] c"SP@\00"
 @str_sp_bang =   internal constant [ 4 x i8 ] c"SP!\00"
 @str_swap =      internal constant [ 5 x i8 ] c"SWAP\00"
@@ -1219,6 +1221,29 @@ define cc 10 void @DROP(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
     ret void
 }
 
+define cc 10 void @C_AT(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                        %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) {
+    ; call the intrinsic operator
+    call cc 10 void @_C_AT(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                           %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr)
+    call cc 10 void @next(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                           %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr)
+
+    ret void
+}
+
+define cc 10 void @C_BANG(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                          %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) {
+    ; call the intrinsic operator
+    call cc 10 void @_C_BANG(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                             %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr)
+    call cc 10 void @next(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                           %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr)
+
+    ret void
+}
+
+
 ; ****************************************************************************
 ; ALU stuff
 ; ****************************************************************************
@@ -1656,6 +1681,22 @@ define %int @main() {
     call void @registerDictionary( i8* %i8_drop,  
                                    %WORD* %dictEntry.drop,
                                    %FNPTR @DROP )
+
+    ; C@ -- @C_AT
+    %ptr_c_at = getelementptr [ 3 x i8 ]* @str_c_at, i32 0
+    %i8_c_at = bitcast [ 3 x i8 ]* %ptr_c_at to i8*
+    %dictEntry.c_at = alloca %WORD
+    call void @registerDictionary( i8* %i8_c_at,  
+                                   %WORD* %dictEntry.c_at,
+                                   %FNPTR @C_AT )
+
+    ; C! -- @C_BANG
+    %ptr_c_bang = getelementptr [ 3 x i8 ]* @str_c_bang, i32 0
+    %i8_c_bang = bitcast [ 3 x i8 ]* %ptr_c_bang to i8*
+    %dictEntry.c_bang = alloca %WORD
+    call void @registerDictionary( i8* %i8_c_bang,  
+                                   %WORD* %dictEntry.c_bang,
+                                   %FNPTR @C_BANG )
 
     ; CHAR- - @CHAR_MIN
     %ptr_char_min = getelementptr [ 6 x i8 ]* @str_char_min, i32 0
