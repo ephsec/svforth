@@ -10,7 +10,13 @@
 %addr.ptr = type i64*
 %fnaddr = type i8*
 
-%WORD = type { %WORD*, %int, i8* }
+%WORD = type { %WORD*, %int, i1, i8* }
+%WORD.fntype = type { %addr*, i1 }
+
+@DOCOL.flag    =     internal constant i1 0
+@CODEWORD.flag =     internal constant i1 1
+
+
 
 ; * test forth program
 @str_testProgram = internal constant [ 18 x i8 ] c"99 2 3 DUP + SWAP\00"
@@ -872,8 +878,6 @@ kernel.ALU_UM_ADD:
     %B.cell.ALU_UM_ADD = load %cell* %SP.addr.incr.ptr.ALU_UM_ADD
 
     ; do our actual operation, calling the LLVM intrinsic
-    %DATA.cell.ALU_UM_ADD = add %cell %A.cell.ALU_UM_ADD, %B.cell.ALU_UM_ADD
-
     %result.ALU_UM_ADD = call {%int, i1} @llvm_ump(%int %A.cell.ALU_UM_ADD,
                                                    %int %B.cell.ALU_UM_ADD )
     ; store the sum at SP-1
@@ -1192,36 +1196,37 @@ kernel.DONE:
 ; at the last word in the dictionary.  Each dictionary entry %WORD is defined
 ; as such:
 ;
-; { %WORD*, %FNPTR, i8* }
+; { %WORD*, %FNPTR, i1, i8* }
 ;
 ; * %WORD* is a pointer to the previous word in the dictionary
 ; * %FNPTR* is a pointer to the function associated with this word
+; * i1 is a flag as to if this is a CODEWORD or a DOCOL word
 ; * i8* is a pointer to a null terminated string that contains the string
 ;   representation of the word.
 ;
 ; In other words, it is:
-; +--------------------------+---------------------+-------+
-; | pointer to previous word | pointer to assembly | name  |
-; +--------------------------+---------------------+-------+
+; +--------------------------+---------------------+---+--------+
+; | pointer to previous word | pointer to assembly | F |  name  |
+; +--------------------------+---------------------+---+--------+
 ;
 ; So, an example dictionary would look like:
 ;
 ;         null - terminates dictionary
 ;          ^
 ;          |
-; +--------|-------------+--------------------------+-------+
-; | pointer to null      | pointer to @DISPSTACK fn | .s    |
-; +----------------------+--------------------------+-------+
+; +--------|-------------+--------------------------+---+------+
+; | pointer to null      | pointer to .S DOCOL      | 0 | .s   |
+; +----------------------+--------------------------+---+------+
 ;          ^
 ;          |
-; +--------|-------------+--------------------------+-------+
-; | pointer to DISPSTACK | pointer to @DIV fn       | /     |
-; +----------------------+--------------------------+-------+
+; +--------|-------------+--------------------------+---+------+
+; | pointer to DISPSTACK | pointer to @DIV fn       | 1 | /    |
+; +----------------------+--------------------------+---+------+
 ;          ^
 ;          |
-; +--------|-------------+--------------------------+-------+
-; | pointer to DIV       | pointer to @MUL fn       | *     |
-; +----------------------+--------------------------+-------+
+; +--------|-------------+--------------------------+---+------+
+; | pointer to DIV       | pointer to @MUL fn       | 1 | *    |
+; +----------------------+--------------------------+---+------+
 ;          ^
 ;          |
 ;          |
@@ -1233,12 +1238,13 @@ kernel.DONE:
 ; for some very powerful redefinitions of functions for current contexts.
 
 define void @registerDictionary(i8* %wordString, %WORD* %newDictEntry,
-                                i8** %wordPtr) {
+                                i1 %wordType, i8** %wordPtr) {
     %dictPtr = load %WORD** @dictPtr
 
     %newDictEntry.prevEntry = getelementptr %WORD* %newDictEntry, i32 0, i32 0
     %newDictEntry.wordPtr = getelementptr %WORD* %newDictEntry, i32 0, i32 1
-    %newDictEntry.wordString = getelementptr %WORD* %newDictEntry, i32 0, i32 2
+    %newDictEntry.wordType = getelementptr %WORD* %newDictEntry, i32 0, i32 2
+    %newDictEntry.wordString = getelementptr %WORD* %newDictEntry, i32 0, i32 3
     %wordPtr.int.ptr = load i8** %wordPtr
     %wordPtr.int = ptrtoint i8* %wordPtr.int.ptr to %int
 
@@ -1271,7 +1277,7 @@ begin:
 printWord:
     ; derefernce our current word pointer and then our string
     %currWord.wordString.ptr.ptr = getelementptr %WORD* %currWord.ptr,
-                                                        i32 0, i32 2
+                                                        i32 0, i32 3
     %currWord.wordString.ptr = load i8** %currWord.wordString.ptr.ptr
 
     ; obtain our function pointer, dereference it, and conver the pointer to
@@ -1304,7 +1310,7 @@ done:
 
 }
 
-define i64* @lookupDictionary(i8* %wordString) {
+define %WORD.fntype @lookupDictionary(i8* %wordString) {
     ; c"TOKEN:\00"
     %tokenString.ptr = getelementptr [ 7 x i8 ]* @tokenString, i32 0
     %tokenString.i8.ptr = bitcast [ 7 x i8 ]* %tokenString.ptr to i8*
@@ -1337,7 +1343,7 @@ checkWord:
 
     ; grab the pointer to the string representation of our current dict entry
     %dictWord.wordString.ptr.ptr = getelementptr %WORD* %currDictWord.ptr,
-                                                 i32 0, i32 2
+                                                 i32 0, i32 3
     %dictWord.wordString.ptr = load i8** %dictWord.wordString.ptr.ptr
 
     ; begin our string comparison block
@@ -1403,10 +1409,27 @@ foundDefn:
     %forthFn.ptr.ptr = getelementptr %WORD* %currDictWord.ptr, i32 0, i32 1
     %forthFn.ptr.int = load i64* %forthFn.ptr.ptr
     %forthKernel.ptr = inttoptr i64 %forthFn.ptr.int to %cell*
-    ret i64* %forthKernel.ptr
+
+    ; whether we're a codeword or a docol word
+    %codewordFlag.ptr = getelementptr %WORD* %currDictWord.ptr, i32 0, i32 2
+    %codewordFlag.int = load i1* %codewordFlag.ptr
+
+    %returnValue = alloca %WORD.fntype
+    %returnValue.addr.ptr = getelementptr %WORD.fntype* %returnValue, i32 0, i32 0
+    %returnValue.flag.ptr.ptr = getelementptr %WORD.fntype* %returnValue, i32 0, i32 1
+    %returnValue.flag.ptr = getelementptr i1* %returnValue.flag.ptr.ptr, i32 0
+    store i64* %forthKernel.ptr, i64** %returnValue.addr.ptr
+    store i1 %codewordFlag.int, i1* %returnValue.flag.ptr
+    %returnValue.value = load %WORD.fntype* %returnValue
+    ret %WORD.fntype %returnValue.value
+
 notFound:
     ; we didn't find anything, so we return null
-    ret i64* null
+    %returnValue.nf = alloca %WORD.fntype
+    %returnValue.addr.ptr.nf = getelementptr %WORD.fntype* %returnValue.nf, i32 0, i32 0
+    store i64* null, i64** %returnValue.addr.ptr.nf
+    %returnValue.value.nf = load %WORD.fntype* %returnValue.nf
+    ret %WORD.fntype %returnValue.value.nf
 }
 
 ; ****************************************************************************
@@ -1513,7 +1536,9 @@ handleToken:
     ; call void @printTwoString(i8* %charString.ptr, i8* %currToken.ptr)
 
     ; lookup our token in the dictionary
-    %forthFn.ptr = call i64* @lookupDictionary(i8* %currToken.ptr)
+    %forthFn = call %WORD.fntype @lookupDictionary(i8* %currToken.ptr)
+    %forthFn.ptr = extractvalue %WORD.fntype %forthFn, 0
+    %forthFn.flag = extractvalue %WORD.fntype %forthFn, 1
 
     ; load our current heap index for inserting a pointer or a literal
     %currHeapIdx.value = load %int* %currHeapIdx.ptr
@@ -1738,12 +1763,16 @@ define %int @main() {
 	%RSP.ptr = getelementptr %cell.ptr %heap.ptr, i32 511
 	store %cell.ptr %RSP.ptr, %cell.ptr* %RSP
 
+    %CODEWORD.flag = load i1* @CODEWORD.flag
+    %DOCOL.flag = load i1* @DOCOL.flag
+
     ; DOLIT - @DOLIT
     %ptr_lit = getelementptr [ 6 x i8 ]* @str_lit, i32 0
     %i8_lit = bitcast [ 6 x i8 ]* %ptr_lit to i8*
     %dictEntry.lit = alloca %WORD
     call void @registerDictionary( i8* %i8_lit,  
                                    %WORD* %dictEntry.lit,
+                                   i1 %CODEWORD.flag,
                                    i8** @kernel.EXEC_DOLIT.addr )
 
     ; .s - @DISPSTACK
@@ -1760,6 +1789,7 @@ define %int @main() {
     %dictEntry.div = alloca %WORD
     call void @registerDictionary( i8* %i8_div, 
                                    %WORD* %dictEntry.div,
+                                   i1 %CODEWORD.flag,
                                    i8** @kernel.ALU_DIV.addr )
 
     ; * - @MUL
@@ -1768,6 +1798,7 @@ define %int @main() {
     %dictEntry.mul = alloca %WORD
     call void @registerDictionary( i8* %i8_mul, 
                                    %WORD* %dictEntry.mul,
+                                   i1 %CODEWORD.flag,
                                    i8** @kernel.ALU_MUL.addr )
 
     ; - - @SUB
@@ -1776,6 +1807,7 @@ define %int @main() {
     %dictEntry.sub = alloca %WORD
     call void @registerDictionary( i8* %i8_sub,  
                                    %WORD* %dictEntry.sub,
+                                   i1 %CODEWORD.flag,
                                    i8** @kernel.ALU_SUB.addr )
 
     ; + - @ADD
@@ -1784,6 +1816,7 @@ define %int @main() {
     %dictEntry.add = alloca %WORD
     call void @registerDictionary( i8* %i8_add,  
                                    %WORD* %dictEntry.add,
+                                   i1 %CODEWORD.flag,
                                    i8** @kernel.ALU_ADD.addr )
 
     ; UM+ - @UMPLUS
@@ -1792,6 +1825,7 @@ define %int @main() {
     %dictEntry.umplus = alloca %WORD
     call void @registerDictionary( i8* %i8_umplus,  
                                    %WORD* %dictEntry.umplus,
+                                   i1 %CODEWORD.flag,
                                    i8** @kernel.ALU_UM_ADD.addr )
 
     ; swap - @SWAP
@@ -1800,6 +1834,7 @@ define %int @main() {
     %dictEntry.swap = alloca %WORD
     call void @registerDictionary( i8* %i8_swap,  
                                    %WORD* %dictEntry.swap,
+                                   i1 %CODEWORD.flag,
                                    i8** @kernel.SP_SWAP.addr )
 
     ; 2swap - @2SWAP
@@ -1808,6 +1843,7 @@ define %int @main() {
     %dictEntry.2swap = alloca %WORD
     call void @registerDictionary( i8* %i8_2swap,  
                                    %WORD* %dictEntry.2swap,
+                                   i1 %CODEWORD.flag,
                                    i8** @kernel.SP_2SWAP.addr )
 
     ; dup - @DUP
@@ -1816,6 +1852,7 @@ define %int @main() {
     %dictEntry.dup = alloca %WORD
     call void @registerDictionary( i8* %i8_dup,  
                                    %WORD* %dictEntry.dup,
+                                   i1 %CODEWORD.flag,
                                    i8** @kernel.SP_DUP.addr )
 
     ; 2dup - @2DUP
@@ -1824,6 +1861,7 @@ define %int @main() {
     %dictEntry.2dup = alloca %WORD
     call void @registerDictionary( i8* %i8_2dup,  
                                    %WORD* %dictEntry.2dup,
+                                   i1 %CODEWORD.flag,
                                    i8** @kernel.SP_2DUP.addr )
 
     ; drop - @DROP
@@ -1832,6 +1870,7 @@ define %int @main() {
     %dictEntry.drop = alloca %WORD
     call void @registerDictionary( i8* %i8_drop,  
                                    %WORD* %dictEntry.drop,
+                                   i1 %CODEWORD.flag,
                                    i8** @kernel.SP_DROP.addr )
 
     ; 2drop - @2DROP
@@ -1840,6 +1879,7 @@ define %int @main() {
     %dictEntry.2drop = alloca %WORD
     call void @registerDictionary( i8* %i8_2drop,  
                                    %WORD* %dictEntry.2drop,
+                                   i1 %CODEWORD.flag,
                                    i8** @kernel.SP_2DROP.addr )
 
     ; rot - @ROT
@@ -1848,6 +1888,7 @@ define %int @main() {
     %dictEntry.rot = alloca %WORD
     call void @registerDictionary( i8* %i8_rot,  
                                    %WORD* %dictEntry.rot,
+                                   i1 %CODEWORD.flag,
                                    i8** @kernel.SP_ROT.addr )
 
     ; -rot - @NROT
@@ -1856,6 +1897,7 @@ define %int @main() {
     %dictEntry.nrot = alloca %WORD
     call void @registerDictionary( i8* %i8_nrot,  
                                    %WORD* %dictEntry.nrot,
+                                   i1 %CODEWORD.flag,
                                    i8** @kernel.SP_NROT.addr )
 
     ; SP@ -- @SP_AT
@@ -1864,6 +1906,7 @@ define %int @main() {
     %dictEntry.sp_at = alloca %WORD
     call void @registerDictionary( i8* %i8_sp_at,  
                                    %WORD* %dictEntry.sp_at,
+                                   i1 %CODEWORD.flag,
                                    i8** @kernel.SP_AT.addr )
 
     ; SP! -- @SP_POP
@@ -1872,6 +1915,7 @@ define %int @main() {
     %dictEntry.sp_bang = alloca %WORD
     call void @registerDictionary( i8* %i8_sp_bang,  
                                    %WORD* %dictEntry.sp_bang,
+                                   i1 %CODEWORD.flag,
                                    i8** @kernel.SP_POP.addr )
 
     ; C@ -- @C_AT
@@ -1880,6 +1924,7 @@ define %int @main() {
     %dictEntry.c_at = alloca %WORD
     call void @registerDictionary( i8* %i8_c_at,  
                                    %WORD* %dictEntry.c_at,
+                                   i1 %CODEWORD.flag,
                                    i8** @kernel.M_AT.addr )
 
     ; C! -- @C_BANG
@@ -1888,6 +1933,7 @@ define %int @main() {
     %dictEntry.c_bang = alloca %WORD
     call void @registerDictionary( i8* %i8_c_bang,  
                                    %WORD* %dictEntry.c_bang,
+                                   i1 %CODEWORD.flag,
                                    i8** @kernel.M_BANG.addr )
 
     ; CHAR- - @CHAR_MIN
@@ -1896,6 +1942,7 @@ define %int @main() {
     %dictEntry.char_min = alloca %WORD
     call void @registerDictionary( i8* %i8_char_min,  
                                    %WORD* %dictEntry.char_min,
+                                   i1 %CODEWORD.flag,
                                    i8** @kernel.ALU_CHAR_SUB.addr )
 
     ; DECR - alias for %CHAR_MIN
@@ -1904,6 +1951,7 @@ define %int @main() {
     %dictEntry.decr = alloca %WORD
     call void @registerDictionary( i8* %i8_decr,  
                                    %WORD* %dictEntry.decr,
+                                   i1 %CODEWORD.flag,
                                    i8** @kernel.ALU_CHAR_SUB.addr )
 
     ; CHAR+ - @CHAR_PLUS
@@ -1912,6 +1960,7 @@ define %int @main() {
     %dictEntry.char_plus = alloca %WORD
     call void @registerDictionary( i8* %i8_char_plus,  
                                    %WORD* %dictEntry.char_plus,
+                                   i1 %CODEWORD.flag,
                                    i8** @kernel.ALU_CHAR_PLUS.addr )
 
     ; INCR - alias for %CHAR_PLUS
@@ -1920,6 +1969,7 @@ define %int @main() {
     %dictEntry.incr = alloca %WORD
     call void @registerDictionary( i8* %i8_incr,  
                                    %WORD* %dictEntry.incr,
+                                   i1 %CODEWORD.flag,
                                    i8** @kernel.ALU_CHAR_PLUS.addr )
 
     ; CHARS - @CHARS
@@ -1928,6 +1978,7 @@ define %int @main() {
     %dictEntry.chars = alloca %WORD
     call void @registerDictionary( i8* %i8_chars,  
                                    %WORD* %dictEntry.chars,
+                                   i1 %CODEWORD.flag,
                                    i8** @kernel.ALU_CHARS.addr )
 
     ; CELL- - @CELL_MIN
@@ -1936,6 +1987,7 @@ define %int @main() {
     %dictEntry.cell_min = alloca %WORD
     call void @registerDictionary( i8* %i8_cell_min,  
                                    %WORD* %dictEntry.cell_min,
+                                   i1 %CODEWORD.flag,
                                    i8** @kernel.ALU_CELL_SUB.addr )
 
     ; CELL+ - @CELL_PLUS
@@ -1944,6 +1996,7 @@ define %int @main() {
     %dictEntry.cell_plus = alloca %WORD
     call void @registerDictionary( i8* %i8_cell_plus,  
                                    %WORD* %dictEntry.cell_plus,
+                                   i1 %CODEWORD.flag,
                                    i8** @kernel.ALU_CELL_PLUS.addr )
 
     ; CELLS - @CELLS
@@ -1952,6 +2005,7 @@ define %int @main() {
     %dictEntry.cells = alloca %WORD
     call void @registerDictionary( i8* %i8_cells,  
                                    %WORD* %dictEntry.cells,
+                                   i1 %CODEWORD.flag,
                                    i8** @kernel.ALU_CELLS.addr )
 
     ; 0< - @GTZ
@@ -1960,6 +2014,7 @@ define %int @main() {
     %dictEntry.nonzero = alloca %WORD
     call void @registerDictionary( i8* %i8_nonzero,  
                                    %WORD* %dictEntry.nonzero,
+                                   i1 %CODEWORD.flag,
                                    i8** @kernel.ALU_GTZ.addr )
 
     ; AND - @AND
@@ -1968,6 +2023,7 @@ define %int @main() {
     %dictEntry.and = alloca %WORD
     call void @registerDictionary( i8* %i8_and,  
                                    %WORD* %dictEntry.and,
+                                   i1 %CODEWORD.flag,
                                    i8** @kernel.ALU_AND.addr )
 
     ; OR - @OR
@@ -1976,6 +2032,7 @@ define %int @main() {
     %dictEntry.or = alloca %WORD
     call void @registerDictionary( i8* %i8_or,  
                                    %WORD* %dictEntry.or,
+                                   i1 %CODEWORD.flag,
                                    i8** @kernel.ALU_OR.addr )
 
     ; XOR - @XOR
@@ -1984,6 +2041,7 @@ define %int @main() {
     %dictEntry.xor = alloca %WORD
     call void @registerDictionary( i8* %i8_xor,  
                                    %WORD* %dictEntry.xor,
+                                   i1 %CODEWORD.flag,
                                    i8** @kernel.ALU_XOR.addr )
  
     ; ** test our dictionary navigation
