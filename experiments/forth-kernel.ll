@@ -120,12 +120,7 @@
 @kernel.DONE.addr = internal constant i8* 
                                 blockaddress(@kernel, %kernel.DONE)
 
-;@kernel.SP_AT.addr = internal constant i8* blockaddress(@kernel, %kernel.SP_AT)
-;@kernel.TEST.addr = internal constant i8* blockaddress(@kernel, %kernel.TEST)
-;@kernel.TEST.1.addr = internal constant i8* blockaddress(@kernel, %kernel.TEST.1)
-;@kernel.TEST.2.addr = internal constant i8* blockaddress(@kernel, %kernel.TEST.2)
-;@kernel.TEST.3.addr = internal constant i8* blockaddress(@kernel, %kernel.TEST.3)
-
+declare i8 @getchar()
 declare i32 @printf(i8*, ... )
 declare void @llvm.memcpy.p0i8.p0i8.i32(i8*, i8*, i32, i32, i1)
 
@@ -139,7 +134,12 @@ define {%int, i1} @llvm_ump(%int %first.value, %int %second.value) {
     ret {%int, i1} %res
 }
 
+; *****************************************************************************
+; for ease of debugging, allows us to print a value to stdout
+; *****************************************************************************
 
+@promptString = internal constant   [5 x i8]  c" Ok \00"
+@wordString =  internal constant    [5 x i8]  c"%s\0D\0A\00"
 @valueString = internal constant    [7 x i8]  c"%llu\0D\0A\00"
 @SPValuesString = internal constant [33 x i8] c"SP: @%llu=%llu SP0: @%llu=%llu\0D\0A\00"
 @charString = internal constant     [6 x i8]  c"CHAR:\00"
@@ -153,6 +153,12 @@ define {%int, i1} @llvm_ump(%int %first.value, %int %second.value) {
 @newlineString = internal constant  [3 x i8]  c"\0D\0A\00"
 @EIPString = internal constant      [13 x i8] c"EIP: @%llu\0D\0A\00"
 @EIPValueString = internal constant [19 x i8] c"EIP: @%llu: %llu\0D\0A\00"
+
+define void @printString(i8* %value) {
+    %string = getelementptr [5 x i8]* @wordString, i32 0, i32 0
+    %printf_ret = call i32 (i8*, ... )* @printf(i8* %string, i8* %value)
+    ret void
+}
 
 define void @printTwoString(i8* %value, i8* %value2) {
     %string = getelementptr [8 x i8]* @twoWordString, i32 0, i32 0
@@ -1597,6 +1603,64 @@ define void @registerDictionary(i8* %wordString, %WORD* %newDictEntry,
     ret void
 }
 
+define void @repl(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                        %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) {
+    %promptString.ptr = getelementptr [5 x i8]* @promptString, i32 0, i32 0
+
+    %currChr.ptr = alloca i8
+    %inputBuffer.ptr = alloca i8, i16 1024
+    %inputBufferIdx.ptr = alloca i16
+    store i8 0, i8* %currChr.ptr
+    store i16 0, i16* %inputBufferIdx.ptr
+
+    br label %prompt
+
+prompt:
+    call void @printString( i8* %promptString.ptr )
+    br label %inputLoop
+
+inputLoop:
+    %inputBufferIdx.value = load i16* %inputBufferIdx.ptr
+    %inChr.value = call i8 @getchar()
+
+    ; check for carriage return to decide if we execute or get another char
+    %is_cr = icmp eq i8 %inChr.value, 10
+    br i1 %is_cr, label %execBuffer, label %addBuffer
+
+addBuffer:
+    %inputBufferWindow.ptr = getelementptr i8* %inputBuffer.ptr,
+                                           i16 %inputBufferIdx.value
+    store i8 %inChr.value, i8* %inputBufferWindow.ptr
+    %newInputBufferIdx.value = add i16 %inputBufferIdx.value, 1
+    store i16 %newInputBufferIdx.value, i16* %inputBufferIdx.ptr 
+
+    br label %inputLoop
+
+execBuffer:
+    ; add a null byte at the end to make it a null terminated string
+    %nullLocation.ptr = getelementptr i8* %inputBuffer.ptr,
+                                      i16 %inputBufferIdx.value
+    store i8 00, i8* %nullLocation.ptr
+
+    ; compile our input into the beginning of our heap
+    call void @compile(i8* %inputBuffer.ptr, %int 0)
+
+    ; load our heap pointer, which is stored as a pointer
+    %heap.ptr = load %pntr* @HEAP
+    %heap.value.ptr = getelementptr %pntr %heap.ptr, %int 0
+    store %pntr %heap.value.ptr, %exec.ptr* %EIP.ptr.ptr
+
+    call void @kernel(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                      %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr)
+
+    ; reset our input buffer pointer to 0
+    store i16 0, i16* %inputBufferIdx.ptr
+
+    br label %prompt
+
+    ret void
+}
+
 define %int @main() {
 	%SP = alloca %cell.ptr
 	%SP0 = alloca %cell.ptr
@@ -1880,6 +1944,9 @@ define %int @main() {
                        %ret.ptr* %RSP, %cell* %DATA)
 
 	call void @printStackPtrValues( %cell.ptr* %SP )
+
+    call void @repl( %cell.ptr* %SP, %exec.ptr* %EIP,
+                     %ret.ptr* %RSP, %cell* %DATA)
 
 	ret %int 0
 }
