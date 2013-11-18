@@ -22,15 +22,24 @@
 @str_sp_at =     internal constant [ 4 x i8 ] c"SP@\00"
 @str_sp_bang =   internal constant [ 4 x i8 ] c"SP!\00"
 @str_swap =      internal constant [ 5 x i8 ] c"SWAP\00"
+@str_2swap =     internal constant [ 6 x i8 ] c"2SWAP\00"
 @str_dup =       internal constant [ 4 x i8 ] c"DUP\00"
+@str_2dup =      internal constant [ 5 x i8 ] c"2DUP\00"
 @str_drop =      internal constant [ 5 x i8 ] c"DROP\00"
+@str_2drop =     internal constant [ 6 x i8 ] c"2DROP\00"
 @str_over =      internal constant [ 5 x i8 ] c"OVER\00"
+@str_rot =       internal constant [ 4 x i8 ] c"ROT\00"
+@str_nrot =      internal constant [ 5 x i8 ] c"-ROT\00"
 @str_umplus =    internal constant [ 4 x i8 ] c"UM+\00"
 @str_add =       internal constant [ 2 x i8 ] c"+\00"
 @str_sub =       internal constant [ 2 x i8 ] c"-\00"
 @str_mul =       internal constant [ 2 x i8 ] c"*\00"
 @str_div =       internal constant [ 2 x i8 ] c"/\00"
 @str_lit =       internal constant [ 6 x i8 ] c"DOLIT\00"
+@str_incr =      internal constant [ 5 x i8 ] c"INCR\00"
+@str_decr =      internal constant [ 5 x i8 ] c"DECR\00"
+@str_incr8 =     internal constant [ 6 x i8 ] c"INCR8\00"
+@str_decr8 =     internal constant [ 6 x i8 ] c"DECR8\00"
 @str_char_min =  internal constant [ 6 x i8 ] c"CHAR-\00"
 @str_char_plus = internal constant [ 6 x i8 ] c"CHAR+\00"
 @str_chars =     internal constant [ 6 x i8 ] c"CHARS\00"
@@ -41,7 +50,7 @@
 @str_and =       internal constant [ 4 x i8 ] c"AND\00"
 @str_or =        internal constant [ 3 x i8 ] c"OR\00"
 @str_xor =       internal constant [ 4 x i8 ] c"XOR\00"
-@str_done =       internal constant [ 5 x i8 ] c"DONE\00"
+@str_done =      internal constant [ 5 x i8 ] c"DONE\00"
 
 
 @kernel.NEXT.addr = internal constant i8* 
@@ -62,12 +71,22 @@
                                 blockaddress(@kernel, %kernel.SP_PUSH)
 @kernel.SP_SWAP.addr = internal constant i8* 
                                 blockaddress(@kernel, %kernel.SP_SWAP)
+@kernel.SP_2SWAP.addr = internal constant i8* 
+                                blockaddress(@kernel, %kernel.SP_2SWAP)
 @kernel.SP_DUP.addr = internal constant i8* 
                                 blockaddress(@kernel, %kernel.SP_DUP)
+@kernel.SP_2DUP.addr = internal constant i8* 
+                                blockaddress(@kernel, %kernel.SP_2DUP)
 @kernel.SP_DROP.addr = internal constant i8* 
                                 blockaddress(@kernel, %kernel.SP_DROP)
+@kernel.SP_2DROP.addr = internal constant i8* 
+                                blockaddress(@kernel, %kernel.SP_2DROP)
 @kernel.SP_OVER.addr = internal constant i8* 
                                 blockaddress(@kernel, %kernel.SP_OVER)
+@kernel.SP_ROT.addr = internal constant i8* 
+                                blockaddress(@kernel, %kernel.SP_ROT)
+@kernel.SP_NROT.addr = internal constant i8* 
+                                blockaddress(@kernel, %kernel.SP_NROT)
 @kernel.ALU_UM_ADD.addr = internal constant i8* 
                                 blockaddress(@kernel, %kernel.ALU_UM_ADD)
 @kernel.ALU_ADD.addr = internal constant i8* 
@@ -542,7 +561,7 @@ kernel.SP_PUSH:
 
 
 kernel.SP_SWAP:
-	; load the memory address that %SP.ptr.ptr resolves to
+    ; swap top two elements of the stack
     ;   bx pop
     ;   ax pop
     ;   bx push
@@ -565,6 +584,41 @@ kernel.SP_SWAP:
 
     br label %kernel.NEXT
 
+kernel.SP_2SWAP:
+    ; swap top two pairs of elements on the stack
+    ;   pop %eax
+    ;   pop %ebx
+    ;   pop %ecx
+    ;   pop %edx
+    ;   push %ebx
+    ;   push %eax
+    ;   push %edx
+    ;   push %ecx
+    %SP.ptr.SP_2SWAP = getelementptr %cell.ptr* %SP.ptr.ptr, i32 0
+    %SP.SP_2SWAP = load %cell.ptr* %SP.ptr.SP_2SWAP
+
+    %A.addr.ptr.SP_2SWAP = getelementptr %cell.ptr %SP.SP_2SWAP, i32 0
+    %A.addr.int.SP_2SWAP = ptrtoint %cell.ptr %A.addr.ptr.SP_2SWAP to %addr
+    %A.cell.SP_2SWAP = load %cell* %A.addr.ptr.SP_2SWAP
+
+    %B.addr.int.SP_2SWAP = add %addr %A.addr.int.SP_2SWAP, 8
+    %B.addr.ptr.SP_2SWAP = inttoptr %addr %B.addr.int.SP_2SWAP to %cell*
+    %B.cell.SP_2SWAP = load %cell* %B.addr.ptr.SP_2SWAP
+
+    %C.addr.int.SP_2SWAP = add %addr %B.addr.int.SP_2SWAP, 8
+    %C.addr.ptr.SP_2SWAP = inttoptr %addr %C.addr.int.SP_2SWAP to %cell*
+    %C.cell.SP_2SWAP = load %cell* %C.addr.ptr.SP_2SWAP
+
+    %D.addr.int.SP_2SWAP = add %addr %C.addr.int.SP_2SWAP, 8
+    %D.addr.ptr.SP_2SWAP = inttoptr %addr %D.addr.int.SP_2SWAP to %cell*
+    %D.cell.SP_2SWAP = load %cell* %D.addr.ptr.SP_2SWAP
+
+    store %cell %B.cell.SP_2SWAP, %cell* %D.addr.ptr.SP_2SWAP  ; %(edx)
+    store %cell %A.cell.SP_2SWAP, %cell* %C.addr.ptr.SP_2SWAP  ; %(ecx)
+    store %cell %D.cell.SP_2SWAP, %cell* %B.addr.ptr.SP_2SWAP  ; %(ebx)
+    store %cell %C.cell.SP_2SWAP, %cell* %A.addr.ptr.SP_2SWAP  ; %(eax)
+
+    br label %kernel.NEXT
 
 kernel.SP_DUP:
     ; copy the number at the top of the stack onto the top of the stack
@@ -592,6 +646,43 @@ kernel.SP_DUP:
 
     br label %kernel.NEXT
 
+kernel.SP_2DUP:
+    ; copy the top two elements of the stack
+    ;   mov (%esp),%eax
+    ;   mov 4(%esp),%ebx
+    ;   push %ebx
+    ;   push %eax
+
+    ; load the memory address that %SP.ptr.ptr resolves to
+    %SP.ptr.SP_2DUP = getelementptr %cell.ptr* %SP.ptr.ptr, i32 0
+    %SP.SP_2DUP = load %cell.ptr* %SP.ptr.SP_2DUP
+
+    ; load %eax
+    %A.addr.ptr.SP_2DUP = getelementptr %cell.ptr %SP.SP_2DUP, i32 0
+    %A.addr.int.SP_2DUP = ptrtoint %cell.ptr %A.addr.ptr.SP_2DUP to %addr
+    %A.cell.SP_2DUP = load %cell* %A.addr.ptr.SP_2DUP
+
+    ; load %ebx
+    %B.addr.int.SP_2DUP = add %addr %A.addr.int.SP_2DUP, 8
+    %B.addr.ptr.SP_2DUP = inttoptr %addr %B.addr.int.SP_2DUP to %cell*
+    %B.cell.SP_2DUP = load %cell* %B.addr.ptr.SP_2DUP
+
+    ; push %ebx
+    %SP.addr.decr.int.SP_2DUP = sub %addr %A.addr.int.SP_2DUP, 8
+    %SP.addr.decr.ptr.SP_2DUP = inttoptr %addr %SP.addr.decr.int.SP_2DUP
+                                      to %cell*
+    store %cell %B.cell.SP_2DUP, %cell* %SP.addr.decr.ptr.SP_2DUP
+
+    ; push %eax
+    %SP.addr.decr.decr.int.SP_2DUP = add %addr %SP.addr.decr.int.SP_2DUP, 8
+    %SP.addr.decr.decr.ptr.SP_2DUP = inttoptr %addr %SP.addr.decr.decr.int.SP_2DUP
+                                           to %cell*
+    store %cell %A.cell.SP_2DUP, %cell* %SP.addr.decr.decr.ptr.SP_2DUP
+
+    ; store our new stack pointer
+    store %cell* %SP.addr.decr.decr.ptr.SP_2DUP, %cell.ptr* %SP.ptr.ptr
+
+    br label %kernel.NEXT
 
 kernel.SP_DROP:
     ; move the stack pointer to the right, forgetting an element
@@ -608,6 +699,25 @@ kernel.SP_DROP:
     %SP.addr.incr.ptr.SP_DROP = inttoptr %addr %SP.addr.incr.int.SP_DROP
                                       to %cell.ptr
     store %cell.ptr %SP.addr.incr.ptr.SP_DROP, %cell.ptr* %SP.ptr.ptr
+
+    br label %kernel.NEXT
+
+kernel.SP_2DROP:
+    ; move the stack pointer two cells to the right, forgetting two elements
+    ;   bx pop 
+    ;   bx pop 
+
+    ; load the memory address that %SP.ptr.ptr resolves to
+    %SP.ptr.SP_2DROP = getelementptr %cell.ptr* %SP.ptr.ptr, i32 0
+    %SP.SP_2DROP = load %cell.ptr* %SP.ptr.SP_2DROP
+    %SP.addr.ptr.SP_2DROP = getelementptr %cell.ptr %SP.SP_2DROP, i32 0
+    %SP.addr.int.SP_2DROP = ptrtoint %cell.ptr %SP.addr.ptr.SP_2DROP to %addr
+
+    ; increment our stack integer pointer, and store it in the register
+    %SP.addr.incr.int.SP_2DROP = add %addr %SP.addr.int.SP_2DROP, 16
+    %SP.addr.incr.ptr.SP_2DROP = inttoptr %addr %SP.addr.incr.int.SP_2DROP
+                                      to %cell.ptr
+    store %cell.ptr %SP.addr.incr.ptr.SP_2DROP, %cell.ptr* %SP.ptr.ptr
 
     br label %kernel.NEXT
 
@@ -647,6 +757,88 @@ kernel.SP_OVER:
     store %cell.ptr %SP.addr.decr.ptr.SP_OVER, %cell.ptr* %SP.ptr.ptr
 
     br label %kernel.NEXT
+
+kernel.SP_ROT:
+    ; rotate the first three elements at the top of the stack
+    ;   pop %eax
+    ;   pop %ebx
+    ;   pop %ecx
+    ;   push %ebx
+    ;   push %eax
+    ;   push %ecx
+
+    ; load the memory address that %SP.ptr.ptr resolves to
+    %SP.ptr.SP_ROT = getelementptr %cell.ptr* %SP.ptr.ptr, i32 0
+    %SP.SP_ROT = load %cell.ptr* %SP.ptr.SP_ROT
+    %SP.addr.ptr.SP_ROT = getelementptr %cell.ptr %SP.SP_ROT, i32 0
+    %SP.addr.int.SP_ROT = ptrtoint %cell.ptr %SP.addr.ptr.SP_ROT
+                                 to %addr
+
+    ; load %eax
+    %A.int.SP_ROT = load %cell* %SP.addr.ptr.SP_ROT
+
+    ; load %ebx
+    %SP.addr.incr.int.SP_ROT = add %addr %SP.addr.int.SP_ROT, 8
+    %SP.addr.incr.ptr.SP_ROT = inttoptr %addr %SP.addr.incr.int.SP_ROT
+                                      to %cell.ptr
+
+    %B.int.SP_ROT = load %cell* %SP.addr.incr.ptr.SP_ROT
+
+    ; load %ecx
+    %SP.addr.incr.incr.int.SP_ROT = add %addr %SP.addr.incr.int.SP_ROT, 8
+    %SP.addr.incr.incr.ptr.SP_ROT = inttoptr %addr %SP.addr.incr.incr.int.SP_ROT
+                                      to %cell.ptr
+
+    %C.int.SP_ROT = load %cell* %SP.addr.incr.incr.ptr.SP_ROT
+
+    ; directly store %eax, %ebx, and %ecx in the appropriate pointers
+    store %cell %B.int.SP_ROT, %cell* %SP.addr.incr.incr.ptr.SP_ROT ; %(ecx)
+    store %cell %A.int.SP_ROT, %cell* %SP.addr.incr.ptr.SP_ROT      ; %(ebx)
+    store %cell %C.int.SP_ROT, %cell* %SP.addr.ptr.SP_ROT           ; %(eax)
+
+    br label %kernel.NEXT
+
+kernel.SP_NROT:
+    ; rotate the first three elements at the top of the stack
+    ;   pop %eax
+    ;   pop %ebx
+    ;   pop %ecx
+    ;   push %eax
+    ;   push %ecx
+    ;   push %ebx
+
+    ; load the memory address that %SP.ptr.ptr resolves to
+    %SP.ptr.SP_NROT = getelementptr %cell.ptr* %SP.ptr.ptr, i32 0
+    %SP.SP_NROT = load %cell.ptr* %SP.ptr.SP_NROT
+    %SP.addr.ptr.SP_NROT = getelementptr %cell.ptr %SP.SP_NROT, i32 0
+    %SP.addr.int.SP_NROT = ptrtoint %cell.ptr %SP.addr.ptr.SP_NROT
+                                 to %addr
+
+    ; load %eax
+    %A.int.SP_NROT = load %cell* %SP.addr.ptr.SP_NROT
+
+    ; load %ebx
+    %SP.addr.incr.int.SP_NROT = add %addr %SP.addr.int.SP_NROT, 8
+    %SP.addr.incr.ptr.SP_NROT = inttoptr %addr %SP.addr.incr.int.SP_NROT
+                                      to %cell.ptr
+
+    %B.int.SP_NROT = load %cell* %SP.addr.incr.ptr.SP_NROT
+
+    ; load %ecx
+    %SP.addr.incr.incr.int.SP_NROT = add %addr %SP.addr.incr.int.SP_NROT, 8
+    %SP.addr.incr.incr.ptr.SP_NROT = inttoptr %addr %SP.addr.incr.incr.int.SP_NROT
+                                      to %cell.ptr
+
+    %C.int.SP_NROT = load %cell* %SP.addr.incr.incr.ptr.SP_NROT
+
+    ; directly store %eax, %ebx, and %ecx in the appropriate pointers
+    store %cell %A.int.SP_NROT, %cell* %SP.addr.incr.incr.ptr.SP_NROT ; %(ecx)
+    store %cell %C.int.SP_NROT, %cell* %SP.addr.incr.ptr.SP_NROT      ; %(ebx)
+    store %cell %B.int.SP_NROT, %cell* %SP.addr.ptr.SP_NROT           ; %(eax)
+
+    br label %kernel.NEXT
+
+
 
 
 ; *****************************************************************************
@@ -1486,6 +1678,14 @@ define %int @main() {
                                    %WORD* %dictEntry.swap,
                                    i8** @kernel.SP_SWAP.addr )
 
+    ; 2swap - @2SWAP
+    %ptr_2swap = getelementptr [ 6 x i8 ]* @str_2swap, i32 0
+    %i8_2swap = bitcast [ 6 x i8 ]* %ptr_2swap to i8*
+    %dictEntry.2swap = alloca %WORD
+    call void @registerDictionary( i8* %i8_2swap,  
+                                   %WORD* %dictEntry.2swap,
+                                   i8** @kernel.SP_2SWAP.addr )
+
     ; dup - @DUP
     %ptr_dup = getelementptr [ 4 x i8 ]* @str_dup, i32 0
     %i8_dup = bitcast [ 4 x i8 ]* %ptr_dup to i8*
@@ -1494,6 +1694,14 @@ define %int @main() {
                                    %WORD* %dictEntry.dup,
                                    i8** @kernel.SP_DUP.addr )
 
+    ; 2dup - @2DUP
+    %ptr_2dup = getelementptr [ 5 x i8 ]* @str_2dup, i32 0
+    %i8_2dup = bitcast [ 5 x i8 ]* %ptr_2dup to i8*
+    %dictEntry.2dup = alloca %WORD
+    call void @registerDictionary( i8* %i8_2dup,  
+                                   %WORD* %dictEntry.2dup,
+                                   i8** @kernel.SP_2DUP.addr )
+
     ; drop - @DROP
     %ptr_drop = getelementptr [ 5 x i8 ]* @str_drop, i32 0
     %i8_drop = bitcast [ 5 x i8 ]* %ptr_drop to i8*
@@ -1501,6 +1709,30 @@ define %int @main() {
     call void @registerDictionary( i8* %i8_drop,  
                                    %WORD* %dictEntry.drop,
                                    i8** @kernel.SP_DROP.addr )
+
+    ; 2drop - @2DROP
+    %ptr_2drop = getelementptr [ 6 x i8 ]* @str_2drop, i32 0
+    %i8_2drop = bitcast [ 6 x i8 ]* %ptr_2drop to i8*
+    %dictEntry.2drop = alloca %WORD
+    call void @registerDictionary( i8* %i8_2drop,  
+                                   %WORD* %dictEntry.2drop,
+                                   i8** @kernel.SP_2DROP.addr )
+
+    ; rot - @ROT
+    %ptr_rot = getelementptr [ 4 x i8 ]* @str_rot, i32 0
+    %i8_rot = bitcast [ 4 x i8 ]* %ptr_rot to i8*
+    %dictEntry.rot = alloca %WORD
+    call void @registerDictionary( i8* %i8_rot,  
+                                   %WORD* %dictEntry.rot,
+                                   i8** @kernel.SP_ROT.addr )
+
+    ; -rot - @NROT
+    %ptr_nrot = getelementptr [ 5 x i8 ]* @str_nrot, i32 0
+    %i8_nrot = bitcast [ 5 x i8 ]* %ptr_nrot to i8*
+    %dictEntry.nrot = alloca %WORD
+    call void @registerDictionary( i8* %i8_nrot,  
+                                   %WORD* %dictEntry.nrot,
+                                   i8** @kernel.SP_NROT.addr )
 
     ; SP@ -- @SP_AT
     %ptr_sp_at = getelementptr [ 4 x i8 ]* @str_sp_at, i32 0
@@ -1542,12 +1774,28 @@ define %int @main() {
                                    %WORD* %dictEntry.char_min,
                                    i8** @kernel.ALU_CHAR_SUB.addr )
 
+    ; DECR - alias for %CHAR_MIN
+    %ptr_decr = getelementptr [ 5 x i8 ]* @str_decr, i32 0
+    %i8_decr = bitcast [ 5 x i8 ]* %ptr_decr to i8*
+    %dictEntry.decr = alloca %WORD
+    call void @registerDictionary( i8* %i8_decr,  
+                                   %WORD* %dictEntry.decr,
+                                   i8** @kernel.ALU_CHAR_SUB.addr )
+
     ; CHAR+ - @CHAR_PLUS
     %ptr_char_plus = getelementptr [ 6 x i8 ]* @str_char_plus, i32 0
     %i8_char_plus = bitcast [ 6 x i8 ]* %ptr_char_plus to i8*
     %dictEntry.char_plus = alloca %WORD
     call void @registerDictionary( i8* %i8_char_plus,  
                                    %WORD* %dictEntry.char_plus,
+                                   i8** @kernel.ALU_CHAR_PLUS.addr )
+
+    ; INCR - alias for %CHAR_PLUS
+    %ptr_incr = getelementptr [ 5 x i8 ]* @str_incr, i32 0
+    %i8_incr = bitcast [ 5 x i8 ]* %ptr_incr to i8*
+    %dictEntry.incr = alloca %WORD
+    call void @registerDictionary( i8* %i8_incr,  
+                                   %WORD* %dictEntry.char_min,
                                    i8** @kernel.ALU_CHAR_PLUS.addr )
 
     ; CHARS - @CHARS
