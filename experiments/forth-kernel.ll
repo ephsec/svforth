@@ -685,7 +685,7 @@ kernel.SP_2DUP:
     store %cell %B.cell.SP_2DUP, %cell* %SP.addr.decr.ptr.SP_2DUP
 
     ; push %eax
-    %SP.addr.decr.decr.int.SP_2DUP = add %addr %SP.addr.decr.int.SP_2DUP, 8
+    %SP.addr.decr.decr.int.SP_2DUP = sub %addr %SP.addr.decr.int.SP_2DUP, 8
     %SP.addr.decr.decr.ptr.SP_2DUP = inttoptr %addr %SP.addr.decr.decr.int.SP_2DUP
                                            to %cell*
     store %cell %A.cell.SP_2DUP, %cell* %SP.addr.decr.decr.ptr.SP_2DUP
@@ -1186,6 +1186,72 @@ kernel.DONE:
     ret void
 }
 
+; *** dictionary functions
+;
+; The dictionary is a linked list, where the global dictionary pointer points
+; at the last word in the dictionary.  Each dictionary entry %WORD is defined
+; as such:
+;
+; { %WORD*, %FNPTR, i8* }
+;
+; * %WORD* is a pointer to the previous word in the dictionary
+; * %FNPTR* is a pointer to the function associated with this word
+; * i8* is a pointer to a null terminated string that contains the string
+;   representation of the word.
+;
+; In other words, it is:
+; +--------------------------+---------------------+-------+
+; | pointer to previous word | pointer to assembly | name  |
+; +--------------------------+---------------------+-------+
+;
+; So, an example dictionary would look like:
+;
+;         null - terminates dictionary
+;          ^
+;          |
+; +--------|-------------+--------------------------+-------+
+; | pointer to null      | pointer to @DISPSTACK fn | .s    |
+; +----------------------+--------------------------+-------+
+;          ^
+;          |
+; +--------|-------------+--------------------------+-------+
+; | pointer to DISPSTACK | pointer to @DIV fn       | /     |
+; +----------------------+--------------------------+-------+
+;          ^
+;          |
+; +--------|-------------+--------------------------+-------+
+; | pointer to DIV       | pointer to @MUL fn       | *     |
+; +----------------------+--------------------------+-------+
+;          ^
+;          |
+;          |
+;      @dictPtr*
+;
+; This arrangement allows Forth to redefine a word without overriding an
+; already compiled reference to the word.  Once the redefinition is done with,
+; it can then be FORGOT -- restoring the original definition.  This allows
+; for some very powerful redefinitions of functions for current contexts.
+
+define void @registerDictionary(i8* %wordString, %WORD* %newDictEntry,
+                                i8** %wordPtr) {
+    %dictPtr = load %WORD** @dictPtr
+
+    %newDictEntry.prevEntry = getelementptr %WORD* %newDictEntry, i32 0, i32 0
+    %newDictEntry.wordPtr = getelementptr %WORD* %newDictEntry, i32 0, i32 1
+    %newDictEntry.wordString = getelementptr %WORD* %newDictEntry, i32 0, i32 2
+    %wordPtr.int.ptr = load i8** %wordPtr
+    %wordPtr.int = ptrtoint i8* %wordPtr.int.ptr to %int
+
+    store %WORD* %dictPtr, %WORD** %newDictEntry.prevEntry
+    store %int %wordPtr.int, %int* %newDictEntry.wordPtr
+    store i8* %wordString, i8** %newDictEntry.wordString
+
+    ; move our dictionary pointer to the newly defined word, the new tail
+    store %WORD* %newDictEntry, %WORD** @dictPtr
+
+    ret void
+}
+
 define void @printDictionary() {
     ; c"--> %s (%llu) \00"
     %dictNavString.ptr = getelementptr [15 x i8]* @dictNavString, i32 0, i32 0
@@ -1343,7 +1409,11 @@ notFound:
     ret i64* null
 }
 
-; *** compiler functions
+; ****************************************************************************
+; compiler -- written in LLVM IR for now until we get enough Forth implemented
+; to write it in Forth
+; ****************************************************************************
+
 define void @compile(i8* %programString.ptr, %int %heapIdx.value) {
     ; c"PROGRAM:\00"
     %progOutString.ptr = getelementptr [9 x i8]* @progOutString, i32 0, i32 0
@@ -1583,25 +1653,10 @@ done:
     ret void
 }
 
-define void @registerDictionary(i8* %wordString, %WORD* %newDictEntry,
-                                i8** %wordPtr) {
-    %dictPtr = load %WORD** @dictPtr
-
-    %newDictEntry.prevEntry = getelementptr %WORD* %newDictEntry, i32 0, i32 0
-    %newDictEntry.wordPtr = getelementptr %WORD* %newDictEntry, i32 0, i32 1
-    %newDictEntry.wordString = getelementptr %WORD* %newDictEntry, i32 0, i32 2
-    %wordPtr.int.ptr = load i8** %wordPtr
-    %wordPtr.int = ptrtoint i8* %wordPtr.int.ptr to %int
-
-    store %WORD* %dictPtr, %WORD** %newDictEntry.prevEntry
-    store %int %wordPtr.int, %int* %newDictEntry.wordPtr
-    store i8* %wordString, i8** %newDictEntry.wordString
-
-    ; move our dictionary pointer to the newly defined word, the new tail
-    store %WORD* %newDictEntry, %WORD** @dictPtr
-
-    ret void
-}
+; ****************************************************************************
+; our REPL -- written in LLVM IR for now until we get enough Forth implemented
+; to write it in Forth
+; ****************************************************************************
 
 define void @repl(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
                         %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) {
