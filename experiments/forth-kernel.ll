@@ -304,9 +304,14 @@ kernel.NEXT:
                                         label %kernel.SP_POP,
                                         label %kernel.SP_PUSH,
                                         label %kernel.SP_SWAP,
+                                        label %kernel.SP_2SWAP,
                                         label %kernel.SP_DUP,
+                                        label %kernel.SP_2DUP,
                                         label %kernel.SP_DROP,
+                                        label %kernel.SP_2DROP,
                                         label %kernel.SP_OVER,
+                                        label %kernel.SP_ROT,
+                                        label %kernel.SP_NROT,
                                         label %kernel.ALU_UM_ADD,
                                         label %kernel.ALU_ADD,
                                         label %kernel.ALU_SUB,
@@ -1795,7 +1800,7 @@ define %int @main() {
     %i8_incr = bitcast [ 5 x i8 ]* %ptr_incr to i8*
     %dictEntry.incr = alloca %WORD
     call void @registerDictionary( i8* %i8_incr,  
-                                   %WORD* %dictEntry.char_min,
+                                   %WORD* %dictEntry.incr,
                                    i8** @kernel.ALU_CHAR_PLUS.addr )
 
     ; CHARS - @CHARS
