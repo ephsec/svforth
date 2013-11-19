@@ -16,8 +16,6 @@
 @DOCOL.flag    =     internal constant i1 0
 @CODEWORD.flag =     internal constant i1 1
 
-
-
 ; * test forth program
 @str_testProgram = internal constant [ 18 x i8 ] c"99 2 3 DUP + SWAP\00"
 
@@ -236,43 +234,26 @@ define void @printEIPPtrValue(%cell.ptr* %EIP.ptr.ptr) {
 }
 
 ; **** heap access and manipulation functions
-define fastcc %pntr @getHeap_ptr(%int %index) {
-    ; load our heap pointer, which is stored as a pointer
-    %heapPtr = load %pntr* @HEAP
-    ; retrieve and return our value pointer
-    %valuePtr = getelementptr %pntr %heapPtr, %int %index
-    ret %pntr %valuePtr
-}
-
-define fastcc %int @getHeap(%int %index) {
-    %valuePtr = call fastcc %pntr @getHeap_ptr(%int %index)
-    %value = load %pntr %valuePtr
-    ret %int %value
-}
-
-define fastcc void @putHeap(%int %index, %int %value) {
-    %valuePtr = call fastcc %pntr @getHeap_ptr(%int %index)
-    store %int %value, %pntr %valuePtr
+define fastcc void @insertToken(%addr %heapAddr, %int* %token) {
+    %tokenPtr.int = ptrtoint %int* %token to %addr
+    %heap.ptr = inttoptr %addr %heapAddr to %cell*
+    store %addr %tokenPtr.int, %cell* %heap.ptr
     ret void
 }
 
-define fastcc void @insertToken(%int %index, %int* %token) {
-    %insPtr = call fastcc %pntr @getHeap_ptr(%int %index)
-    %tokenPtrInt = ptrtoint %int* %token to %int
-    call fastcc void @putHeap(%int %index, %int %tokenPtrInt)
+define fastcc void @insertLiteral(%addr %heapAddr, %int %value) {
+    %heap.ptr = inttoptr %addr %heapAddr to %cell*
+    store %addr %value, %cell* %heap.ptr
     ret void
 }
 
-define fastcc void @insertLiteral(%int %index, %int %value) {
-    %insPtr = call fastcc %pntr @getHeap_ptr(%int %index)
-    call fastcc void @putHeap(%int %index, %int %value)
-    ret void
-}
+; *****************************************************************************
+; globals used by Forth
+; *****************************************************************************
 
-
-
-@SP0 = weak global %cell.ptr null
-@HEAP = weak global %cell.ptr null
+@SP0 = weak global %cell.ptr null       ; pointer to the beginning of the stack
+@HEAP = weak global %cell.ptr null      ; pointer to the beginning of the heap
+@HERE = weak global %cell.ptr null      ; pointer to the next (theoretic) free
 @dictPtr = weak global %WORD* null      ; pointer to the last word in the dict
 @heapSize = weak global %int 0          ; size of the heap in i8 bytes
 
@@ -1250,6 +1231,7 @@ define void @registerDictionary(i8* %wordString, %WORD* %newDictEntry,
 
     store %WORD* %dictPtr, %WORD** %newDictEntry.prevEntry
     store %int %wordPtr.int, %int* %newDictEntry.wordPtr
+    store i1 %wordType, i1* %newDictEntry.wordType
     store i8* %wordString, i8** %newDictEntry.wordString
 
     ; move our dictionary pointer to the newly defined word, the new tail
@@ -1552,7 +1534,7 @@ insertFn:
     call fastcc void @insertToken(%int %currHeapIdx.value, i64* %forthFn.ptr)
 
     ; advance our local heap index now that we've inserted a token
-    %newHeapIdx.value = add %int %currHeapIdx.value, 1
+    %newHeapIdx.value = add %int %currHeapIdx.value, 8
     store %int %newHeapIdx.value, %int* %currHeapIdx.ptr
 
     ; show that we've 'compiled' a token
@@ -1628,7 +1610,7 @@ insertLiteral:
     %_LIT.addr.int = ptrtoint i8* %_LIT.addr.ptr to %int
     call fastcc void @insertLiteral(%int %currHeapIdx.value,
                                     %int %_LIT.addr.int)
-    %newHeapIdx.value.insertLiteral = add %int %currHeapIdx.value, 1
+    %newHeapIdx.value.insertLiteral = add %int %currHeapIdx.value, 8
 
     ; Now that we have our constructed literal, insert it into the heap
     call fastcc void @insertLiteral(%int %newHeapIdx.value.insertLiteral,
@@ -1638,7 +1620,7 @@ insertLiteral:
     call void @printTwoString(i8* %literalString.ptr, i8* %currToken.ptr)
 
     ; Finally, increment and store our current heap pointer.
-    %storeHeapIdx.value = add %int %newHeapIdx.value.insertLiteral, 1
+    %storeHeapIdx.value = add %int %newHeapIdx.value.insertLiteral, 8
     store %int %storeHeapIdx.value, %pntr %currHeapIdx.ptr
 
     br label %checkTokenEndNull
@@ -1722,13 +1704,15 @@ execBuffer:
                                       i16 %inputBufferIdx.value
     store i8 00, i8* %nullLocation.ptr
 
-    ; compile our input into the beginning of our heap
-    call void @compile(i8* %inputBuffer.ptr, %int 0)
+    ; set the pointer for our compiled program to after the allocated dict
+    %BEGIN = call %addr @allocate(i64 0)
 
-    ; load our heap pointer, which is stored as a pointer
-    %heap.ptr = load %pntr* @HEAP
-    %heap.value.ptr = getelementptr %pntr %heap.ptr, %int 0
-    store %pntr %heap.value.ptr, %exec.ptr* %EIP.ptr.ptr
+    ; ** compile our input buffer
+    call void @compile(i8* %inputBuffer.ptr, %int %BEGIN)
+
+    ; set our EIP to the new compiled program
+    %EIP.new = inttoptr %cell %BEGIN to %exec.ptr
+    store %exec.ptr %EIP.new, %exec.ptr* %EIP.ptr.ptr
 
     call void @kernel(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
                       %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr)
@@ -1741,6 +1725,22 @@ execBuffer:
     ret void
 }
 
+define %addr @allocate(%int %cells) {
+    %HERE = load %pntr* @HERE
+    %HERE.addr = ptrtoint %cell* %HERE to %addr
+    %HERE.incr = mul %addr %cells, 8
+    %HERE.new = add %addr %HERE.addr, %HERE.incr
+    %HERE.new.ptr = inttoptr %addr %HERE.new to %cell*
+    store %cell* %HERE.new.ptr, %pntr* @HERE
+    ret %addr %HERE.addr
+}
+
+define %WORD* @allocateDict() {
+    %allocEntry = call %addr @allocate(%int 4) ; allocate 4 cells for our entry
+    %retWordAlloc = inttoptr %cell %allocEntry to %WORD*
+    ret %WORD* %retWordAlloc
+}
+
 define %int @main() {
 	%SP = alloca %cell.ptr
 	%SP0 = alloca %cell.ptr
@@ -1748,20 +1748,27 @@ define %int @main() {
 	%RSP = alloca %cell.ptr
 	%DATA = alloca %cell
 
-	%heap.ptr = alloca %cell, i32 1024
+    %STACK.ptr = alloca %cell, i32 256
+    %RSTACK.ptr = alloca %cell, i32 256
+    %heap.ptr = alloca %cell, i32 1024
+
+    %SP.ptr =  getelementptr %cell.ptr %STACK.ptr, i32 255
+    %SP0.ptr = getelementptr %cell.ptr %STACK.ptr, i32 255
+    store %cell.ptr %SP.ptr, %cell.ptr* %SP
+    store %cell.ptr %SP0.ptr, %cell.ptr* @SP0
+    store %cell 0, %cell.ptr %SP.ptr
+
+    %RSP.ptr = getelementptr %cell.ptr %RSTACK.ptr, i32 255
+    store %cell.ptr %RSP.ptr, %cell.ptr* %RSP
+
 	%heap.addr = ptrtoint %cell* %heap.ptr to %int
     store %pntr %heap.ptr, %pntr* @HEAP
+    store %pntr %heap.ptr, %pntr* @HERE
 
-	%SP.ptr =  getelementptr %cell.ptr %heap.ptr, i32 1023
-	%SP0.ptr = getelementptr %cell.ptr %heap.ptr, i32 1023
-	store %cell.ptr %SP.ptr, %cell.ptr* %SP
-	store %cell.ptr %SP0.ptr, %cell.ptr* @SP0
-	store %cell 0, %cell.ptr %SP.ptr
+    %dictEntry.addr = inttoptr %cell %heap.addr to %WORD*
 
 	%EIP.ptr = getelementptr %cell.ptr %heap.ptr, i32 0
 	store %cell.ptr %EIP.ptr, %cell.ptr* %EIP
-	%RSP.ptr = getelementptr %cell.ptr %heap.ptr, i32 511
-	store %cell.ptr %RSP.ptr, %cell.ptr* %RSP
 
     %CODEWORD.flag = load i1* @CODEWORD.flag
     %DOCOL.flag = load i1* @DOCOL.flag
@@ -1769,7 +1776,7 @@ define %int @main() {
     ; DOLIT - @DOLIT
     %ptr_lit = getelementptr [ 6 x i8 ]* @str_lit, i32 0
     %i8_lit = bitcast [ 6 x i8 ]* %ptr_lit to i8*
-    %dictEntry.lit = alloca %WORD
+    %dictEntry.lit = call %WORD* @allocateDict()
     call void @registerDictionary( i8* %i8_lit,  
                                    %WORD* %dictEntry.lit,
                                    i1 %CODEWORD.flag,
@@ -1778,7 +1785,7 @@ define %int @main() {
     ; .s - @DISPSTACK
     ; %ptr_dispStack = getelementptr [ 3 x i8 ]* @str_dispStack, i32 0
     ; %i8_dispStack = bitcast [ 3 x i8 ]* %ptr_dispStack to i8*
-    ; %dictEntry.dispStack = alloca %WORD
+    ; %dictEntry.dispStack = call %WORD* @allocateDict()
     ;call void @registerDictionary( i8* %i8_dispStack, 
     ;                               %WORD* %dictEntry.dispStack,
     ;                               %FNPTR @DISPSTACK )
@@ -1786,7 +1793,7 @@ define %int @main() {
     ; / - @DIV
     %ptr_div = getelementptr [ 2 x i8 ]* @str_div, i32 0
     %i8_div = bitcast [ 2 x i8 ]* %ptr_div to i8*
-    %dictEntry.div = alloca %WORD
+    %dictEntry.div = call %WORD* @allocateDict()
     call void @registerDictionary( i8* %i8_div, 
                                    %WORD* %dictEntry.div,
                                    i1 %CODEWORD.flag,
@@ -1795,7 +1802,7 @@ define %int @main() {
     ; * - @MUL
     %ptr_mul = getelementptr [ 2 x i8 ]* @str_mul, i32 0
     %i8_mul = bitcast [ 2 x i8 ]* %ptr_mul to i8*
-    %dictEntry.mul = alloca %WORD
+    %dictEntry.mul = call %WORD* @allocateDict()
     call void @registerDictionary( i8* %i8_mul, 
                                    %WORD* %dictEntry.mul,
                                    i1 %CODEWORD.flag,
@@ -1804,7 +1811,7 @@ define %int @main() {
     ; - - @SUB
     %ptr_sub = getelementptr [ 2 x i8 ]* @str_sub, i32 0
     %i8_sub = bitcast [ 2 x i8 ]* %ptr_sub to i8*
-    %dictEntry.sub = alloca %WORD
+    %dictEntry.sub = call %WORD* @allocateDict()
     call void @registerDictionary( i8* %i8_sub,  
                                    %WORD* %dictEntry.sub,
                                    i1 %CODEWORD.flag,
@@ -1813,7 +1820,7 @@ define %int @main() {
     ; + - @ADD
     %ptr_add = getelementptr [ 2 x i8 ]* @str_add, i32 0
     %i8_add = bitcast [ 2 x i8 ]* %ptr_add to i8*
-    %dictEntry.add = alloca %WORD
+    %dictEntry.add = call %WORD* @allocateDict()
     call void @registerDictionary( i8* %i8_add,  
                                    %WORD* %dictEntry.add,
                                    i1 %CODEWORD.flag,
@@ -1822,7 +1829,7 @@ define %int @main() {
     ; UM+ - @UMPLUS
     %ptr_umplus = getelementptr [ 4 x i8 ]* @str_umplus, i32 0
     %i8_umplus = bitcast [ 4 x i8 ]* %ptr_umplus to i8*
-    %dictEntry.umplus = alloca %WORD
+    %dictEntry.umplus = call %WORD* @allocateDict()
     call void @registerDictionary( i8* %i8_umplus,  
                                    %WORD* %dictEntry.umplus,
                                    i1 %CODEWORD.flag,
@@ -1831,7 +1838,7 @@ define %int @main() {
     ; swap - @SWAP
     %ptr_swap = getelementptr [ 5 x i8 ]* @str_swap, i32 0
     %i8_swap = bitcast [ 5 x i8 ]* %ptr_swap to i8*
-    %dictEntry.swap = alloca %WORD
+    %dictEntry.swap = call %WORD* @allocateDict()
     call void @registerDictionary( i8* %i8_swap,  
                                    %WORD* %dictEntry.swap,
                                    i1 %CODEWORD.flag,
@@ -1840,7 +1847,7 @@ define %int @main() {
     ; 2swap - @2SWAP
     %ptr_2swap = getelementptr [ 6 x i8 ]* @str_2swap, i32 0
     %i8_2swap = bitcast [ 6 x i8 ]* %ptr_2swap to i8*
-    %dictEntry.2swap = alloca %WORD
+    %dictEntry.2swap = call %WORD* @allocateDict()
     call void @registerDictionary( i8* %i8_2swap,  
                                    %WORD* %dictEntry.2swap,
                                    i1 %CODEWORD.flag,
@@ -1849,7 +1856,7 @@ define %int @main() {
     ; dup - @DUP
     %ptr_dup = getelementptr [ 4 x i8 ]* @str_dup, i32 0
     %i8_dup = bitcast [ 4 x i8 ]* %ptr_dup to i8*
-    %dictEntry.dup = alloca %WORD
+    %dictEntry.dup = call %WORD* @allocateDict()
     call void @registerDictionary( i8* %i8_dup,  
                                    %WORD* %dictEntry.dup,
                                    i1 %CODEWORD.flag,
@@ -1858,7 +1865,7 @@ define %int @main() {
     ; 2dup - @2DUP
     %ptr_2dup = getelementptr [ 5 x i8 ]* @str_2dup, i32 0
     %i8_2dup = bitcast [ 5 x i8 ]* %ptr_2dup to i8*
-    %dictEntry.2dup = alloca %WORD
+    %dictEntry.2dup = call %WORD* @allocateDict()
     call void @registerDictionary( i8* %i8_2dup,  
                                    %WORD* %dictEntry.2dup,
                                    i1 %CODEWORD.flag,
@@ -1867,7 +1874,7 @@ define %int @main() {
     ; drop - @DROP
     %ptr_drop = getelementptr [ 5 x i8 ]* @str_drop, i32 0
     %i8_drop = bitcast [ 5 x i8 ]* %ptr_drop to i8*
-    %dictEntry.drop = alloca %WORD
+    %dictEntry.drop = call %WORD* @allocateDict()
     call void @registerDictionary( i8* %i8_drop,  
                                    %WORD* %dictEntry.drop,
                                    i1 %CODEWORD.flag,
@@ -1876,7 +1883,7 @@ define %int @main() {
     ; 2drop - @2DROP
     %ptr_2drop = getelementptr [ 6 x i8 ]* @str_2drop, i32 0
     %i8_2drop = bitcast [ 6 x i8 ]* %ptr_2drop to i8*
-    %dictEntry.2drop = alloca %WORD
+    %dictEntry.2drop = call %WORD* @allocateDict()
     call void @registerDictionary( i8* %i8_2drop,  
                                    %WORD* %dictEntry.2drop,
                                    i1 %CODEWORD.flag,
@@ -1885,7 +1892,7 @@ define %int @main() {
     ; rot - @ROT
     %ptr_rot = getelementptr [ 4 x i8 ]* @str_rot, i32 0
     %i8_rot = bitcast [ 4 x i8 ]* %ptr_rot to i8*
-    %dictEntry.rot = alloca %WORD
+    %dictEntry.rot = call %WORD* @allocateDict()
     call void @registerDictionary( i8* %i8_rot,  
                                    %WORD* %dictEntry.rot,
                                    i1 %CODEWORD.flag,
@@ -1894,7 +1901,7 @@ define %int @main() {
     ; -rot - @NROT
     %ptr_nrot = getelementptr [ 5 x i8 ]* @str_nrot, i32 0
     %i8_nrot = bitcast [ 5 x i8 ]* %ptr_nrot to i8*
-    %dictEntry.nrot = alloca %WORD
+    %dictEntry.nrot = call %WORD* @allocateDict()
     call void @registerDictionary( i8* %i8_nrot,  
                                    %WORD* %dictEntry.nrot,
                                    i1 %CODEWORD.flag,
@@ -1903,7 +1910,7 @@ define %int @main() {
     ; SP@ -- @SP_AT
     %ptr_sp_at = getelementptr [ 4 x i8 ]* @str_sp_at, i32 0
     %i8_sp_at = bitcast [ 4 x i8 ]* %ptr_sp_at to i8*
-    %dictEntry.sp_at = alloca %WORD
+    %dictEntry.sp_at = call %WORD* @allocateDict()
     call void @registerDictionary( i8* %i8_sp_at,  
                                    %WORD* %dictEntry.sp_at,
                                    i1 %CODEWORD.flag,
@@ -1912,7 +1919,7 @@ define %int @main() {
     ; SP! -- @SP_POP
     %ptr_sp_bang = getelementptr [ 4 x i8 ]* @str_sp_bang, i32 0
     %i8_sp_bang = bitcast [ 4 x i8 ]* %ptr_sp_bang to i8*
-    %dictEntry.sp_bang = alloca %WORD
+    %dictEntry.sp_bang = call %WORD* @allocateDict()
     call void @registerDictionary( i8* %i8_sp_bang,  
                                    %WORD* %dictEntry.sp_bang,
                                    i1 %CODEWORD.flag,
@@ -1921,7 +1928,7 @@ define %int @main() {
     ; C@ -- @C_AT
     %ptr_c_at = getelementptr [ 3 x i8 ]* @str_c_at, i32 0
     %i8_c_at = bitcast [ 3 x i8 ]* %ptr_c_at to i8*
-    %dictEntry.c_at = alloca %WORD
+    %dictEntry.c_at = call %WORD* @allocateDict()
     call void @registerDictionary( i8* %i8_c_at,  
                                    %WORD* %dictEntry.c_at,
                                    i1 %CODEWORD.flag,
@@ -1930,7 +1937,7 @@ define %int @main() {
     ; C! -- @C_BANG
     %ptr_c_bang = getelementptr [ 3 x i8 ]* @str_c_bang, i32 0
     %i8_c_bang = bitcast [ 3 x i8 ]* %ptr_c_bang to i8*
-    %dictEntry.c_bang = alloca %WORD
+    %dictEntry.c_bang = call %WORD* @allocateDict()
     call void @registerDictionary( i8* %i8_c_bang,  
                                    %WORD* %dictEntry.c_bang,
                                    i1 %CODEWORD.flag,
@@ -1939,7 +1946,7 @@ define %int @main() {
     ; CHAR- - @CHAR_MIN
     %ptr_char_min = getelementptr [ 6 x i8 ]* @str_char_min, i32 0
     %i8_char_min = bitcast [ 6 x i8 ]* %ptr_char_min to i8*
-    %dictEntry.char_min = alloca %WORD
+    %dictEntry.char_min = call %WORD* @allocateDict()
     call void @registerDictionary( i8* %i8_char_min,  
                                    %WORD* %dictEntry.char_min,
                                    i1 %CODEWORD.flag,
@@ -1948,7 +1955,7 @@ define %int @main() {
     ; DECR - alias for %CHAR_MIN
     %ptr_decr = getelementptr [ 5 x i8 ]* @str_decr, i32 0
     %i8_decr = bitcast [ 5 x i8 ]* %ptr_decr to i8*
-    %dictEntry.decr = alloca %WORD
+    %dictEntry.decr = call %WORD* @allocateDict()
     call void @registerDictionary( i8* %i8_decr,  
                                    %WORD* %dictEntry.decr,
                                    i1 %CODEWORD.flag,
@@ -1957,7 +1964,7 @@ define %int @main() {
     ; CHAR+ - @CHAR_PLUS
     %ptr_char_plus = getelementptr [ 6 x i8 ]* @str_char_plus, i32 0
     %i8_char_plus = bitcast [ 6 x i8 ]* %ptr_char_plus to i8*
-    %dictEntry.char_plus = alloca %WORD
+    %dictEntry.char_plus = call %WORD* @allocateDict()
     call void @registerDictionary( i8* %i8_char_plus,  
                                    %WORD* %dictEntry.char_plus,
                                    i1 %CODEWORD.flag,
@@ -1966,7 +1973,7 @@ define %int @main() {
     ; INCR - alias for %CHAR_PLUS
     %ptr_incr = getelementptr [ 5 x i8 ]* @str_incr, i32 0
     %i8_incr = bitcast [ 5 x i8 ]* %ptr_incr to i8*
-    %dictEntry.incr = alloca %WORD
+    %dictEntry.incr = call %WORD* @allocateDict()
     call void @registerDictionary( i8* %i8_incr,  
                                    %WORD* %dictEntry.incr,
                                    i1 %CODEWORD.flag,
@@ -1975,7 +1982,7 @@ define %int @main() {
     ; CHARS - @CHARS
     %ptr_chars = getelementptr [ 6 x i8 ]* @str_chars, i32 0
     %i8_chars = bitcast [ 6 x i8 ]* %ptr_chars to i8*
-    %dictEntry.chars = alloca %WORD
+    %dictEntry.chars = call %WORD* @allocateDict()
     call void @registerDictionary( i8* %i8_chars,  
                                    %WORD* %dictEntry.chars,
                                    i1 %CODEWORD.flag,
@@ -1984,7 +1991,7 @@ define %int @main() {
     ; CELL- - @CELL_MIN
     %ptr_cell_min = getelementptr [ 6 x i8 ]* @str_cell_min, i32 0
     %i8_cell_min = bitcast [ 6 x i8 ]* %ptr_cell_min to i8*
-    %dictEntry.cell_min = alloca %WORD
+    %dictEntry.cell_min = call %WORD* @allocateDict()
     call void @registerDictionary( i8* %i8_cell_min,  
                                    %WORD* %dictEntry.cell_min,
                                    i1 %CODEWORD.flag,
@@ -1993,7 +2000,7 @@ define %int @main() {
     ; CELL+ - @CELL_PLUS
     %ptr_cell_plus = getelementptr [ 6 x i8 ]* @str_cell_plus, i32 0
     %i8_cell_plus = bitcast [ 6 x i8 ]* %ptr_cell_plus to i8*
-    %dictEntry.cell_plus = alloca %WORD
+    %dictEntry.cell_plus = call %WORD* @allocateDict()
     call void @registerDictionary( i8* %i8_cell_plus,  
                                    %WORD* %dictEntry.cell_plus,
                                    i1 %CODEWORD.flag,
@@ -2002,7 +2009,7 @@ define %int @main() {
     ; CELLS - @CELLS
     %ptr_cells = getelementptr [ 6 x i8 ]* @str_cells, i32 0
     %i8_cells = bitcast [ 6 x i8 ]* %ptr_cells to i8*
-    %dictEntry.cells = alloca %WORD
+    %dictEntry.cells = call %WORD* @allocateDict()
     call void @registerDictionary( i8* %i8_cells,  
                                    %WORD* %dictEntry.cells,
                                    i1 %CODEWORD.flag,
@@ -2011,7 +2018,7 @@ define %int @main() {
     ; 0< - @GTZ
     %ptr_nonzero = getelementptr [ 3 x i8 ]* @str_nonzero, i32 0
     %i8_nonzero = bitcast [ 3 x i8 ]* %ptr_nonzero to i8*
-    %dictEntry.nonzero = alloca %WORD
+    %dictEntry.nonzero = call %WORD* @allocateDict()
     call void @registerDictionary( i8* %i8_nonzero,  
                                    %WORD* %dictEntry.nonzero,
                                    i1 %CODEWORD.flag,
@@ -2020,7 +2027,7 @@ define %int @main() {
     ; AND - @AND
     %ptr_and = getelementptr [ 4 x i8 ]* @str_and, i32 0
     %i8_and = bitcast [ 4 x i8 ]* %ptr_and to i8*
-    %dictEntry.and = alloca %WORD
+    %dictEntry.and = call %WORD* @allocateDict()
     call void @registerDictionary( i8* %i8_and,  
                                    %WORD* %dictEntry.and,
                                    i1 %CODEWORD.flag,
@@ -2029,7 +2036,7 @@ define %int @main() {
     ; OR - @OR
     %ptr_or = getelementptr [ 3 x i8 ]* @str_or, i32 0
     %i8_or = bitcast [ 3 x i8 ]* %ptr_or to i8*
-    %dictEntry.or = alloca %WORD
+    %dictEntry.or = call %WORD* @allocateDict()
     call void @registerDictionary( i8* %i8_or,  
                                    %WORD* %dictEntry.or,
                                    i1 %CODEWORD.flag,
@@ -2038,7 +2045,7 @@ define %int @main() {
     ; XOR - @XOR
     %ptr_xor = getelementptr [ 4 x i8 ]* @str_xor, i32 0
     %i8_xor = bitcast [ 4 x i8 ]* %ptr_xor to i8*
-    %dictEntry.xor = alloca %WORD
+    %dictEntry.xor = call %WORD* @allocateDict()
     call void @registerDictionary( i8* %i8_xor,  
                                    %WORD* %dictEntry.xor,
                                    i1 %CODEWORD.flag,
@@ -2047,11 +2054,17 @@ define %int @main() {
     ; ** test our dictionary navigation
     call void @printDictionary()
 
+    ; set the pointer for our compiled program to after the allocated dict
+    %BEGIN = call %addr @allocate(i64 0)
 
     ; ** compile our forth program
     %ptr_testProgram = getelementptr[ 18 x i8 ]* @str_testProgram, i32 0
     %i8_testProgram = bitcast [ 18 x i8 ]* %ptr_testProgram to i8*
-    call void @compile(i8* %i8_testProgram, %int 0)
+    call void @compile(i8* %i8_testProgram, %int %BEGIN)
+
+    ; set our EIP to the new compiled program
+    %EIP.new = inttoptr %cell %BEGIN to %exec.ptr
+    store %exec.ptr %EIP.new, %exec.ptr* %EIP
 
 	call void @kernel( %cell.ptr* %SP, %exec.ptr* %EIP,
                        %ret.ptr* %RSP, %cell* %DATA)
