@@ -13,8 +13,10 @@
 %WORD = type { %WORD*, %int, i1, i8* }
 %WORD.fntype = type { %addr*, i1 }
 
-@DOCOL.flag    =     internal constant i1 0
-@CODEWORD.flag =     internal constant i1 1
+@DOCOL.flag     =     internal constant i1 0
+@CODEWORD.flag  =     internal constant i1 1
+@IMMEDIATE.flag =     internal constant i1 0
+@COMPILE.flag   =     internal constant i1 1
 
 ; * test forth program
 @str_testProgram = internal constant [ 18 x i8 ] c"99 2 3 DUP + SWAP\00"
@@ -147,10 +149,15 @@ define {%int, i1} @llvm_ump(%int %first.value, %int %second.value) {
 @valueString = internal constant    [7 x i8]  c"%llu\0D\0A\00"
 @SPValuesString = internal constant [33 x i8] c"SP: @%llu=%llu SP0: @%llu=%llu\0D\0A\00"
 @charString = internal constant     [6 x i8]  c"CHAR:\00"
+@executedString = internal constant [10 x i8] c"EXECUTED:\00"
+@execLitString = internal constant  [18 x i8] c"EXECUTED: LITERAL\00"
 @compiledString = internal constant [10 x i8] c"COMPILED:\00"
+@compLitString = internal constant  [18 x i8] c"COMPILED: LITERAL\00"
+
+
 @dictString = internal constant     [6 x i8]  c"DICT:\00"
 @literalString = internal constant  [9 x i8]  c"LITERAL:\00"
-@progOutString = internal constant  [9 x i8]  c"PROGRAM:\00"
+@progOutString = internal constant  [7 x i8]  c"INPUT:\00"
 @tokenString = internal constant    [7 x i8]  c"TOKEN:\00"
 @twoWordString = internal constant  [8 x i8]  c"%s %s\0D\0A\00"
 @dictNavString = internal constant  [15 x i8] c"--> %s (%llu) \00"
@@ -251,9 +258,11 @@ define fastcc void @insertLiteral(%addr %heapAddr, %int %value) {
 ; globals used by Forth
 ; *****************************************************************************
 
+
 @SP0 = weak global %cell.ptr null       ; pointer to the beginning of the stack
 @HEAP = weak global %cell.ptr null      ; pointer to the beginning of the heap
 @HERE = weak global %cell.ptr null      ; pointer to the next (theoretic) free
+@STATE = weak global i1 0               ; compile/immediate state
 @dictPtr = weak global %WORD* null      ; pointer to the last word in the dict
 @heapSize = weak global %int 0          ; size of the heap in i8 bytes
 
@@ -1397,9 +1406,12 @@ foundDefn:
     %codewordFlag.int = load i1* %codewordFlag.ptr
 
     %returnValue = alloca %WORD.fntype
-    %returnValue.addr.ptr = getelementptr %WORD.fntype* %returnValue, i32 0, i32 0
-    %returnValue.flag.ptr.ptr = getelementptr %WORD.fntype* %returnValue, i32 0, i32 1
-    %returnValue.flag.ptr = getelementptr i1* %returnValue.flag.ptr.ptr, i32 0
+    %returnValue.addr.ptr = getelementptr %WORD.fntype* %returnValue,
+                                          i32 0, i32 0
+    %returnValue.flag.ptr.ptr = getelementptr %WORD.fntype* %returnValue,
+                                          i32 0, i32 1
+    %returnValue.flag.ptr = getelementptr i1* %returnValue.flag.ptr.ptr,
+                                          i32 0
     store i64* %forthKernel.ptr, i64** %returnValue.addr.ptr
     store i1 %codewordFlag.int, i1* %returnValue.flag.ptr
     %returnValue.value = load %WORD.fntype* %returnValue
@@ -1408,36 +1420,50 @@ foundDefn:
 notFound:
     ; we didn't find anything, so we return null
     %returnValue.nf = alloca %WORD.fntype
-    %returnValue.addr.ptr.nf = getelementptr %WORD.fntype* %returnValue.nf, i32 0, i32 0
+    %returnValue.addr.ptr.nf = getelementptr %WORD.fntype* %returnValue.nf,
+                                             i32 0, i32 0
     store i64* null, i64** %returnValue.addr.ptr.nf
     %returnValue.value.nf = load %WORD.fntype* %returnValue.nf
     ret %WORD.fntype %returnValue.value.nf
 }
 
 ; ****************************************************************************
-; compiler -- written in LLVM IR for now until we get enough Forth implemented
-; to write it in Forth
+; interpreter/compiler -- written in LLVM IR for now until we get enough Forth
+; implemented to write it in Forth
 ; ****************************************************************************
 
-define void @compile(i8* %programString.ptr, %int %heapIdx.value) {
+define void @interpret(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                       %ret.ptr* %RSP.ptr.ptr, %int* %progStr.addr.ptr) {
     ; c"PROGRAM:\00"
-    %progOutString.ptr = getelementptr [9 x i8]* @progOutString, i32 0, i32 0
+    %progOutString.ptr = getelementptr [7 x i8]* @progOutString, i32 0, i32 0
     ; c"COMPILED:\00"
     %compiledString.ptr = getelementptr [10 x i8]* @compiledString, i32 0, i32 0
+    ; c"COMPILED: LITERAL\00"
+    %compLitString.ptr = getelementptr [18 x i8]* @compLitString, i32 0, i32 0
+    ; c"EXECUTED:\00"
+    %executedString.ptr = getelementptr [10 x i8]* @executedString, i32 0, i32 0
+    ; c"EXECUTED: LITERAL\00"
+    %execLitString.ptr = getelementptr [18 x i8]* @execLitString, i32 0, i32 0
+
     ; c"CHAR:\00"
     %charString.ptr = getelementptr [6 x i8]* @charString, i32 0, i32 0
-    ; c"LITERAL:\00"
-    %literalString.ptr = getelementptr [9 x i8]* @literalString, i32 0, i32 0
 
     %progStrIdx.ptr = alloca i32        ; where we are in the program string
     %beginCurrToken.ptr = alloca i32    ; where the current token begins
     %currChr.ptr = alloca i8            ; a pointer to the current character
     %currHeapIdx.ptr = alloca %int      ; where in the heap we insert our token
+    %iHeap.ptr = alloca %cell*, i32 256 ; our interpret/compile buffer
+    %DATA.ptr = alloca %cell            ; our local data register
+
+    ; obtain and compute our program address
+    %progStrIdx.int = load %int* %progStr.addr.ptr
+    %programString.ptr = inttoptr %int %progStrIdx.int to i8*
 
     ; we start at the beginning of the program string
     store i32 0, i32* %progStrIdx.ptr
-    ; initialize our local heap pointer to the value passed into the function
-    store %int %heapIdx.value, %int* %currHeapIdx.ptr
+    ; initialize our local heap index pointer
+    %currHeapIdx.int = ptrtoint %cell.ptr* %iHeap.ptr to %cell
+    store %int %currHeapIdx.int, %int* %currHeapIdx.ptr
 
     ; show the user what we're working with
     call void @printTwoString(i8* %progOutString.ptr, i8* %programString.ptr)
@@ -1446,6 +1472,9 @@ define void @compile(i8* %programString.ptr, %int %heapIdx.value) {
     br label %beginToken
 
 beginToken:
+    ; load our current compile/immediate state
+    %STATE = load i1* @STATE
+
     ; grab our current program string index to work with
     %progStrIdx.value = load i32* %progStrIdx.ptr
 
@@ -1527,9 +1556,12 @@ handleToken:
 
     ; check if we have a function pointer, or a null pointer
     %is_fnPtr_null = icmp eq i64* %forthFn.ptr, null
-    br i1 %is_fnPtr_null, label %checkLiteral, label %insertFn
+    br i1 %is_fnPtr_null, label %checkLiteral, label %handleFn
 
-insertFn:
+handleFn:
+    br i1 %STATE, label %compileFn, label %immediateFn
+
+compileFn:
     ; insert our function pointer into our heap
     call fastcc void @insertToken(%int %currHeapIdx.value, i64* %forthFn.ptr)
 
@@ -1542,6 +1574,28 @@ insertFn:
 
     ; all done with the token, let's move on
     br label %checkTokenEndNull
+
+immediateFn:
+    ; insert our token to immediately evaluate
+    call fastcc void @insertToken(%int %currHeapIdx.value, i64* %forthFn.ptr)
+
+    ; terminate our token with DONE
+    %currHeapIdx.value.immediate = add %addr %currHeapIdx.value, 8
+    %DONE.addr.ptr.immediate = load i8** @kernel.DONE.addr
+    %DONE.addr.int.immediate = ptrtoint i8* %DONE.addr.ptr.immediate to %addr
+    call fastcc void @insertLiteral(%int %currHeapIdx.value.immediate,
+                                    %addr %DONE.addr.int.immediate)
+
+    ; show that we've 'executed' a token
+    call void @printTwoString(i8* %executedString.ptr, i8* %currToken.ptr)
+
+    ; set up and call the kernel on our token
+    %EIP.immediate.ptr = inttoptr %int %currHeapIdx.value to %addr*
+    store %addr* %EIP.immediate.ptr, %addr.ptr* %EIP.ptr.ptr
+    call void @kernel(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                      %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr)
+
+    br label %advanceIdx
 
 checkLiteral:
     ; our current token was not found on the dictionary, so we interpret it
@@ -1605,6 +1659,31 @@ nextLitChr:
     br label %literalLoop
 
 insertLiteral:
+    br i1 %STATE, label %insertLiteralHeap, label %insertLiteralStack
+
+insertLiteralStack:
+    ; copied from our @kernel.PUSH routine
+    ; load the memory address that %SP.ptr.ptr resolves to
+    %SP.ptr.SP_PUSH = getelementptr %cell.ptr* %SP.ptr.ptr, i32 0
+    %SP.SP_PUSH = load %cell.ptr* %SP.ptr.SP_PUSH
+    %SP.addr.ptr.SP_PUSH = getelementptr %cell.ptr %SP.SP_PUSH, i32 0
+    %SP.addr.int.SP_PUSH = ptrtoint %cell.ptr %SP.addr.ptr.SP_PUSH to %addr
+
+    ; decrement our stack integer pointer, and store it in the register
+    %SP.addr.decr.int.SP_PUSH = sub %addr %SP.addr.int.SP_PUSH, 8
+    %SP.addr.decr.ptr.SP_PUSH = inttoptr %addr %SP.addr.decr.int.SP_PUSH
+                                      to %cell.ptr
+    store %cell.ptr %SP.addr.decr.ptr.SP_PUSH, %cell.ptr* %SP.ptr.ptr
+
+    ; store our literal on the stack
+    store %cell %newLiteralInt.value, %addr* %SP.addr.decr.ptr.SP_PUSH
+
+    ; report our new literal to the user
+    call void @printTwoString(i8* %execLitString.ptr, i8* %currToken.ptr)
+
+    br label %checkTokenEndNull
+
+insertLiteralHeap:
     ; insert our _LIT function into the heap
     %_LIT.addr.ptr = load i8** @kernel.EXEC_DOLIT.addr
     %_LIT.addr.int = ptrtoint i8* %_LIT.addr.ptr to %int
@@ -1617,7 +1696,7 @@ insertLiteral:
                                    %int %newLiteralInt.value)
 
     ; report our new literal to the user
-    call void @printTwoString(i8* %literalString.ptr, i8* %currToken.ptr)
+    call void @printTwoString(i8* %compLitString.ptr, i8* %currToken.ptr)
 
     ; Finally, increment and store our current heap pointer.
     %storeHeapIdx.value = add %int %newHeapIdx.value.insertLiteral, 8
@@ -1666,7 +1745,7 @@ done:
 ; ****************************************************************************
 
 define void @repl(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
-                        %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) {
+                  %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr) {
     %promptString.ptr = getelementptr [5 x i8]* @promptString, i32 0, i32 0
 
     %currChr.ptr = alloca i8
@@ -1704,18 +1783,13 @@ execBuffer:
                                       i16 %inputBufferIdx.value
     store i8 00, i8* %nullLocation.ptr
 
-    ; set the pointer for our compiled program to after the allocated dict
-    %BEGIN = call %addr @allocate(i64 0)
+    ; set up to pass our input buffer to the interpreter
+    %inputBuffer.ptr.int = ptrtoint i8* %inputBuffer.ptr to %int
+    store %int %inputBuffer.ptr.int, %int* %DATA.ptr
 
-    ; ** compile our input buffer
-    call void @compile(i8* %inputBuffer.ptr, %int %BEGIN)
-
-    ; set our EIP to the new compiled program
-    %EIP.new = inttoptr %cell %BEGIN to %exec.ptr
-    store %exec.ptr %EIP.new, %exec.ptr* %EIP.ptr.ptr
-
-    call void @kernel(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
-                      %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr)
+    ; invoke the interpreter on our input buffer
+    call void @interpret(%cell.ptr* %SP.ptr.ptr, %exec.ptr* %EIP.ptr.ptr,
+                         %ret.ptr* %RSP.ptr.ptr, %int* %DATA.ptr)
 
     ; reset our input buffer pointer to 0
     store i16 0, i16* %inputBufferIdx.ptr
@@ -2060,13 +2134,14 @@ define %int @main() {
     ; ** compile our forth program
     %ptr_testProgram = getelementptr[ 18 x i8 ]* @str_testProgram, i32 0
     %i8_testProgram = bitcast [ 18 x i8 ]* %ptr_testProgram to i8*
-    call void @compile(i8* %i8_testProgram, %int %BEGIN)
+    %i8_testProgram.addr = ptrtoint i8* %i8_testProgram to %int
+    store %int %i8_testProgram.addr, %int* %DATA
 
     ; set our EIP to the new compiled program
     %EIP.new = inttoptr %cell %BEGIN to %exec.ptr
     store %exec.ptr %EIP.new, %exec.ptr* %EIP
 
-	call void @kernel( %cell.ptr* %SP, %exec.ptr* %EIP,
+	call void @interpret( %cell.ptr* %SP, %exec.ptr* %EIP,
                        %ret.ptr* %RSP, %cell* %DATA)
 
 	call void @printStackPtrValues( %cell.ptr* %SP )
