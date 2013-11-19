@@ -5,32 +5,32 @@ LLVMAS=llvm-as-3.3 -regalloc=greedy
 LLVMC=llc-3.3
 #LLVMC=llc-3.3 -regalloc=iterativescan
 
-all: forth-kernel.ll
-	$(LLVMAS) forth-kernel.ll
-	$(LLVMC) forth-kernel.bc
+all: $(EXECUTABLE).ll
+	$(LLVMAS) $(EXECUTABLE).ll
+	$(LLVMC) $(EXECUTABLE).bc
 	clang -o $(EXECUTABLE) $(EXECUTABLE).s
 	time ./$(EXECUTABLE)
 
-optimize:
-	$(LLVMOPT) forth-kernel.ll > forth-kernel.opt.ll
-	$(LLVMAS) forth-kernel.opt.ll
-	$(LLVMC) forth-kernel.opt.bc
+optimize: $(EXECUTABLE).ll
+	$(LLVMOPT) $(EXECUTABLE).ll > forth-kernel.opt.ll
+	$(LLVMAS) $(EXECUTABLE).opt.ll
+	$(LLVMC) $(EXECUTABLE).opt.bc
 	clang -o $(EXECUTABLE).opt $(EXECUTABLE).opt.s
 	time ./$(EXECUTABLE).opt
 
-bugpoint:
-	$(LLVMOPT) forth.ll > forth.opt.ll
-	$(LLVMAS) forth.opt.ll
-	$(LLVMC) forth.opt.bc
-	$(BUGPOINT) forth.opt.bc
+bugpoint: $(EXECUTABLE).ll
+	$(LLVMOPT) $(EXECUTABLE).ll > forth.opt.ll
+	$(LLVMAS) $(EXECUTABLE).opt.ll
+	$(LLVMC) $(EXECUTABLE).opt.bc
+	$(BUGPOINT) $(EXECUTABLE).opt.bc
 	clang -o $(EXECUTABLE).opt $(EXECUTABLE).opt.s
 	time ./$(EXECUTABLE).opt
 
 clean:
-	rm $(EXECUTABLE)
-	rm forth.s
-	rm forth.bc
-	rm forth.opt.ll
-	rm forth.opt.bc
-	rm forth.opt.s
-	rm $(EXECUTABLE).opt
+	rm -f $(EXECUTABLE)
+	rm -f $(EXECUTABLE).s
+	rm -f $(EXECUTABLE).bc
+	rm -f $(EXECUTABLE).opt.ll
+	rm -f $(EXECUTABLE).opt.bc
+	rm -f $(EXECUTABLE).opt.s
+	rm -f $(EXECUTABLE).opt
