@@ -11,13 +11,14 @@ function importJSLibrary(library) {
     var script = document.createElement('script');
     script.type = 'text/javascript';
     script.src = library;
+    script.async = true;
     body.appendChild(script);
   }
 }
 
 // We have a much more secure and sane way to deal with JSON parsing that
 // doesn't use eval().
-importJSLibrary( 'lib/json.js' )
+// importJSLibrary( 'lib/json.js' )
 
 // Make object creation in JavaScript much more sane by adding a create
 // function.
@@ -90,26 +91,33 @@ var createContext = function( spec ) {
     else { var dictionary = createDictionary() };
   if ( 'coros' in spec ) { var coros = spec.coros }
     else { var coros = [] };
+  if ( 'tokens' in spec ) { var tokens = spec.tokens }
+    else { var tokens = [] };
+  if ( 'console' in spec ) { var console = spec.console }
+    else { var console = {} };
+
+  var returnValue = spec.returnValue;
+  var callback = spec.callback;
+
+  var context = {};
+
+  context.dictionary = dictionary
+  context.tokens = tokens
+  context.returnValue = returnValue
+  context.callback = callback
+  context.console = console
+
   if ( 'stacks' in spec ) { var stacks = spec.stacks }
-    else { var stacks = { "@global": createStack( "@global" ) } };
+    else { var stacks = { "@global": createStack( "@global", context ) } };
   if ( 'stack' in spec ) { var stack = spec.stack }
     else { var stack = stacks[ "@global" ] };
   if ( 'writeStack' in spec ) { var writeStack = spec.writeStack }
     else { var writeStack = stacks[ "@global" ] };
-  if ( 'tokens' in spec ) { var tokens = spec.tokens }
-    else { var tokens = [] };
-  var returnValue = spec.returnValue;
-  var callback = spec.callback;
 
-  context = {};
-
-  context.dictionary = dictionary
   context.stack = stack
   context.writeStack = writeStack
   context.stacks = stacks
-  context.tokens = tokens
-  context.returnValue = returnValue
-  context.callback = callback
+
 
   return( context );
 }
@@ -211,7 +219,7 @@ var applyExecutionContext = function( context ) {
     // instead leveraging the fact that we're a context object ourself; this
     // segues into apply() very well.
 
-    var context = this;
+    // console.log( "Execute called:", input, this.tokens );
 
     tokens = this.preprocessInput( input );
 
@@ -263,46 +271,46 @@ var applyExecutionContext = function( context ) {
       if ( typeof this.returnContext !== 'undefined' ) {
         // We have another context to return to, so we execute the callback
         // on the old context to return control to it.
+        // console.log( "Execution done, returning context.", this )
         returnContext = this.returnContext;
         this.executeCallback( returnContext );
       } else {
         // Ensure that we're not called again, ending the token execution
         // loop.
+        // console.log( "Execution done.", this )
         this.callback = undefined;
         return;
       }
     }
 
-    var context = this;
-
     // Before we do anything, set our callback on the current context to 
     // advance to the next token.  All Forth functions should be calling the
     // callback to complete, allowing the parser state to advance.
-    context.callback = this.nextToken;
+    this.callback = this.nextToken;
 
     // We move onto the next token by assigning the new token to currToken
     // and dropping it from the current token stream.
-    var currToken = context.tokens.shift();
+    var currToken = this.tokens.shift();
 
     // We're a string, so we need to evaluate it.
     if ( typeof( currToken ) == 'string' ) {
       // Null string due to extra whitespace, ignore it.
       if ( currToken == "" ) {
-        context.nextToken.apply( this );
-      } else if (currToken in context.dictionary.definitions) {
+        this.nextToken.apply( this );
+      } else if (currToken in this.dictionary.definitions) {
         // We're in the dictionary, so we do a lookup and retrieve the
         // definition.
-        word = context.dictionary.getWord( currToken );
+        word = this.dictionary.getWord( currToken );
         if ( typeof( word ) == 'function' ) {
           // We found a JavaScript function or closure stored in the definition,
           // so we execute it, with the callback to move onto the next token.
-          word( context );
+          word( this );
         } else if ( typeof( word ) === 'string' ) {
           // We found a definition that only contains a string, so we need
           // to execute it as an input stream.
-          word = context.compile( word.split(/\s/) );
-          context.tokens = word.concat( context.tokens );
-          context.nextToken.apply( this );
+          word = this.compile( word.split(/\s/) );
+          this.tokens = word.concat( this.tokens );
+          this.nextToken.apply( this );
         } else {
           // The definition contained an array, so we insert this definition
           // into our current stream at the beginning.
@@ -310,27 +318,27 @@ var applyExecutionContext = function( context ) {
           // We splice to copy the word to ensure that the original definition
           // do not get tampered with.
           copyWord = word.splice(0);
-          context.tokens = copyWord.concat( context.tokens );
-          context.nextToken.apply( this );
+          this.tokens = copyWord.concat( this.tokens );
+          this.nextToken.apply( this );
         }
       // Check if our token is a number so that we properly push it onto the
       // stack as an int or a float.
       } else if ( !isNaN( currToken ) ) {
-          context.stack.push( parseFloat( currToken) );
-          context.nextToken.apply( this );
+          this.stack.push( parseFloat( currToken ) );
+          this.nextToken.apply( this );
       } else {
         // We don't appear to be anything that we need to execute, so we 
         // push ourself as a string onto the stack.
-        context.stack.push( currToken );
-        context.nextToken.apply( this );
+        this.stack.push( currToken );
+        this.nextToken.apply( this );
       }
     } else if ( typeof( currToken ) == 'function' ) {
       // We're a closure, so invoke it directly.
-      currToken( context );
+      currToken( this );
     } else if ( typeof( currToken ) !== 'undefined' ) {
       // We're not a string or a function, so push ourself onto the stack.
-      context.stack.push( currToken );
-      context.nextToken.apply( this );
+      this.stack.push( currToken );
+      this.nextToken.apply( this );
     }
   }
 
@@ -451,10 +459,10 @@ var applyExecutionContext = function( context ) {
   // Load a Forth file into our current execution context.
   this.load = function( path ) {
     loadCallback = function( context ) {
+      console.log( "Loading Forth file: ", path );
       var fileContents = context.stack.pop();
       var tokenizedContents = fileContents.split( /\s/ );
-      context.tokens = tokenizedContents.concat( this.tokens );
-      context.nextToken.apply( context );
+      context.execute( tokenizedContents );
     }
     getFile( path, this, loadCallback );
   }
@@ -499,11 +507,12 @@ ForthFns = {
 
 // Core stack functions in Forth
 
-createStack = function(name) {
+createStack = function(name, context) {
   var channelFired = false;
   var stack = [];
   stack.name = name;
-  stack.channels = [];
+  stack.filters = [];
+  stack.subscriptions = [];
   stack.coros = [];
   stack.running = false;
   stack.ignoreRedirect = false;
@@ -521,27 +530,49 @@ createStack = function(name) {
       }
     }
 
-    if ( this.channels.length ) {
-      for ( channel in this.channels ) {
+    if ( this.subscriptions.length ) {
+      for ( subscription in this.subscriptions ) {
         // We create a new context each time we call a channel on a stack,
         // with a temporary local stack.
-        var channelContext = Object.create( context );
-        channelContext.tokens = [];
-        channelStackId = '#'+Math.floor(Math.random()*16777215).toString(16)
-        channelContext.stacks[ channelStackId ] = [];
-        channelContext.stack = channelContext.stacks[ channelStackId ];
-        channelContext.writeStack = channelContext.stack;
-        channelContext.stack.name = channelStackId;
+        var subscriptionContext = Object.create( context );
+        subscriptionContext.tokens = [];
+        subscriptionStackId = '#'+Math.floor(Math.random()*16777215).toString(16)
+        subscriptionContext.stacks[ subscriptionStackId ] = [];
+        subscriptionContext.stack = subscriptionContext.stacks[ subscriptionStackId ];
+        subscriptionContext.writeStack = subscriptionContext.stack;
+        subscriptionContext.stack.name = subscriptionStackId;
 
         // Insert our items to work upon onto our temporary channel stack.
-        [].push.apply( channelContext.stack, args );
+        [].push.apply( subscriptionContext.stack, args );
 
         // We execute our channel code on our channelContext.
-        channelContext.execute( this.channels[ channel ].slice(0) );
+        subscriptionContext.execute(
+          this.subscriptions[ subscription ].slice(0) );
+
+      };
+    };
+
+    if ( this.filters.length ) {
+      for ( filter in this.filters ) {
+        // We create a new context each time we call a channel on a stack,
+        // with a temporary local stack.
+        var filterContext = Object.create( context );
+        filterContext.tokens = [];
+        filterStackId = '#'+Math.floor(Math.random()*16777215).toString(16)
+        filterContext.stacks[ filterStackId ] = [];
+        filterContext.stack = filterContext.stacks[ filterStackId ];
+        filterContext.writeStack = filterContext.stack;
+        filterContext.stack.name = filterStackId;
+
+        // Insert our items to work upon onto our temporary channel stack.
+        [].push.apply( filterContext.stack, args );
+
+        // We execute our channel code on our channelContext.
+        filterContext.execute( this.filters[ filter ].slice(0) );
 
         // We then copy the temporary stack contents into the stack that the
         // channel was associated with.
-        [].push.apply( this, channelContext.stack );
+        [].push.apply( this, filterContext.stack );
       };
 
       return;
@@ -555,22 +586,35 @@ createStack = function(name) {
 }
 
 StackFns = {
-  'channel': function( context ) {
+  'filter': function( context ) {
     blockToExecute = context.stack.pop();
     stackToWatch = context.stack.pop();
 
     if ( !( stackToWatch in context.stacks ) ) {
-      context.stacks[ stackToWatch ] = createStack( stackToWatch );
+      context.stacks[ stackToWatch ] = createStack( stackToWatch, context );
     };
     stackToWatch = context.stacks[ stackToWatch ];
-    stackToWatch.channels.push( context.compile( blockToExecute ) );
+    stackToWatch.filters.push( context.compile( blockToExecute ) );
+    context.executeCallback( context );
+  },
+
+  'subscribe': function( context ) {
+    blockToExecute = context.stack.pop();
+    stackToWatch = context.stack.pop();
+
+    if ( !( stackToWatch in context.stacks ) ) {
+      context.stacks[ stackToWatch ] = createStack( stackToWatch, context );
+    };
+
+    stackToWatch = context.stacks[ stackToWatch ];
+    stackToWatch.subscriptions.push( context.compile( blockToExecute ) );
     context.executeCallback( context );
   },
 
   'pipe': function( context ) {
     desiredStack = context.stack.pop();
     if ( !( desiredStack in context.stacks ) ) {
-      context.stacks[ desiredStack ] = createStack( desiredStack );
+      context.stacks[ desiredStack ] = createStack( desiredStack, context );
     };
     context.writeStack = context.stacks[ desiredStack ];
     context.executeCallback( context );
@@ -583,7 +627,7 @@ StackFns = {
   'switch-stack': function( context ) {
     desiredStack = context.stack.pop();
     if ( !( desiredStack in context.stacks ) ) {
-      context.stacks[ desiredStack ] = createStack( desiredStack );
+      context.stacks[ desiredStack ] = createStack( desiredStack, context );
     }
     context.stack = context.stacks[ desiredStack ];
     context.executeCallback( context );
@@ -610,7 +654,7 @@ StackFns = {
   'push-stack': function( context ) {
       var target = context.stack.pop();
       if ( !( target in context.stacks ) ) {
-        context.stacks[ target ] = createStack( target );
+        context.stacks[ target ] = createStack( target, context );
       };
       var value = context.stack.pop();
 
@@ -683,9 +727,16 @@ StackFns = {
 
   // Output our stack onto the console.
   '.s': function( context ) {
+      // console.log( "CONSOLE:", context );
       for (var s=0; s<context.stack.length; s++) {
-        try { console.log( context.stack.name + ":" + s + " = " + JSON.stringify( context.stack[s] ) ) }
-        catch (err) { console.log( s + ": cannot show" ) }
+        if ( typeof( context.console ) !== 'undefined') {
+          context.console.output( context.stack.name + ":" + s + " = " +
+                               context.stack[s] );
+        } else {
+          try { console.log( context.stack.name + ":" + s + " = " +
+                JSON.stringify( context.stack[s] ) ) }
+          catch (err) { console.log( s + ": cannot show" ) }
+        }
       }
       context.executeCallback( context );
     },
@@ -695,6 +746,11 @@ StackFns = {
       retval = context.stack.length;
       context.stack.push( retval );
       context.executeCallback( context );
+    },
+
+  '.cs': function( context ) {
+      console.log( context.stack.name );
+      console.log( context.stack );
     }
   };
 
@@ -1018,6 +1074,10 @@ ExtraFns = {
   "print": function(context) {
     console.log( context.stack.pop() )
     context.executeCallback( context );
+  },
+  "clear-localstorage": function(context) {
+    console.log( "Clearing local storage.")
+    localStorage.clear()
   }
 }
 
