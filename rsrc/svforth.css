@@ -1,0 +1,84 @@
+* {
+  margin: 0px;
+  padding: 0px;
+  background: #000000;
+}
+
+body {
+  height: 95%;
+}
+
+
+.screen {
+  height: 600px;
+}
+
+.ForthCanvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 90%;
+  height: 70%;
+}
+
+.Console {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 90%;
+  height: 30%;
+}
+
+.term {
+  font-family: monospace;
+  font-size: 16px;
+  color: #33d001;
+  background: none;
+}
+
+.prompt {
+  font-family: monospace;
+  white-space: nowrap;
+  color: #33d001;
+  -webkit-box-orient: horizontal;
+  -webkit-box-align: stretch;
+  display: box;
+  box-orient: horizontal;
+  box-align: stretch;
+  clear: both;
+  font-size: 16px;
+  background-color: transparent;
+  outline: none;
+  border-style: none;
+}
+
+.prompt:focus {
+  outline:0;
+}
+
+.screen {
+  margin:0px;
+}
+
+.canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 89%;
+  width: 80%;
+  margin: 0px;
+  padding: 0px;
+
+}
+
+.divider {
+  position: absolute;
+  left: 0;
+  bottom: 10.50%;
+  width: 80%;
+  height: 0.25%;
+  padding: 0px;
+  border-bottom: 1px solid rgba(0,0,0,0.3);
+  border-top: 1px solid rgba(255,255,255,0.2);
+  background: #a90329; /* Old browsers */
+}
