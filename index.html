@@ -1,67 +1,42 @@
-<!doctype html>
-<html lang='en-US'>
-<head>
-    <meta charset='utf-8'>
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <link href="rsrc/svforth.css" rel="stylesheet">
+
     <title>SVFORTH</title>
-</head>
+    <meta name="viewport" content="initial-scale=1.0, user-scalable=no">
+    <meta charset="utf-8">
+  </head>
+  <body>
+    <div class="screen">
+      <canvas id="canvas" class="ForthCanvas"></canvas>
+      <div class="divider"></div>
+      <div class="terminal-block">
+        <div id="ForthConsole" class="Console"></div>
+      </div>
+    </div>
+    <script src="lib/json.js"></script>
+    <script src="forth.js" ></script>
+    <script src='lib/Ractive.min.js'></script>
+    <script>
+      function initialize() {
+        importJSLibrary('forth/canvas.js');
+        importJSLibrary('forth/ds.js' );
+        importJSLibrary('forth/url.js' );
+        importJSLibrary('forth/rubicon.js');
+        importJSLibrary('forth/console.js');
+        initialContext.execute(
+          'forth/rss.f load-forth \
+           forth/canvas.f load-forth \
+           [ Initializing... ] ForthConsole create-terminal \
+           ." SVFORTH System " print \
+           ." (c) 2013 Ephemeral Security " print' );
+      }
 
-
-<body>
-  <div id='injection'></div>
-  <script src='lib/Ractive.min.js'></script>
-  <script src='forth.js'></script>
-  <script src='forth/canvas.js'></script> 
-  <script>
-    initialContext.load( 'forth/canvas.f' )
-  </script>
-  <script src='forth/binary.js'></script>
-  <script src='forth/ds.js'></script>
-  <script src='forth/url.js'></script>
-  <script>
-    initialContext.load( 'forth/rss.f' )
-  </script>
-
-
-  <script>function takeInput()
-  { forthInput = document.getElementById('forth-input')
-    newContext = createContext( initialContext );
-    newExecutionContext = applyExecutionContext.apply( newContext );
-    newExecutionContext.execute( forthInput.value );
-    forthInput.value = ""
-  }
-  </script>
-
-  <form action="javascript:takeInput()">
-    <input type="text" id="forth-input" name="forth-input"
-           style='width:100%'>
-  </form>
-  <table width='100%'>
-    <tr>
-      <tr>
-        <td valign='top'>
-          <canvas id="canvas" width="800" height="600"></canvas>
-        </td>
-      </tr>
-      <td valign='bottom'>
-          <h3>Stack</h3>
-          <div id='stacklist'>
-          </div>
-          <script>
-             ractive = new Ractive({
-                el: stacklist,
-                template: "<ul> \
-                      {{#stackitems}} \
-                      <div>{{{ JSON.stringify( . ) }}}</div> \
-                      {{/stackitems}} \
-                      </ul>",
-             data: {
-                stackitems: executionContext.stack
-            }});
-          </script>
-      </td>
-    </tr>
-  </table>
-
-</body>
-
+      document.addEventListener("DOMContentLoaded", function(event) {
+        initialize();
+      });
+    </script>
+  </body>
 </html>
