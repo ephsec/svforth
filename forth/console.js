@@ -65,11 +65,13 @@ function ForthConsole() {
 
   	var that = this;
 
-    function createForthHooks(screenBuffer) {
-        var forthConsole = {}
+    function createForthHooks(screenBuffer, forthBuffer, terminalContainer) {
+        var forthConsole = {};
+
         forthConsole.createOutputHandler = function() { return(
             function(item) {
-                if( screenBuffer.maxLines == screenBuffer.length ) {
+                if( screenBuffer.maxLines == screenBuffer.length &&
+                    ( screenBuffer.length > 1) ) {
                     screenBuffer.shift();
                 }
                 if (typeof item == "object") {
@@ -84,13 +86,14 @@ function ForthConsole() {
                         screenBuffer.shift();
                     }
                     screenBuffer.push( wrappedLines[ line ] );
+                    forthBuffer.push( wrappedLines[ line ] );
                 }
             } ) } ;
 
         forthConsole.createPrintHandler = function() { return(
             function(context) {
                 item = context.stack.pop();
-                if( screenBuffer.maxLines == screenBuffer.length ) {
+                if( screenBuffer.maxLines == screenBuffer.length && ( screenBuffer.length > 1 ) ) {
                     screenBuffer.shift();
                 }
                 if (typeof item == "object") {
@@ -101,10 +104,11 @@ function ForthConsole() {
 
                 wrappedLines = wrapBuffer( outputString, screenBuffer )
                 for ( line in wrappedLines ) {
-                    while ( screenBuffer.maxLines - 1 < screenBuffer.length ) {
+                    while ( screenBuffer.maxLines - 1 < screenBuffer.length && ( screenBuffer.length > 1 ) ) {
                         screenBuffer.shift();
                     }
                     screenBuffer.push( wrappedLines[ line ] );
+                    forthBuffer.push( wrappedLines[ line ] );
                 }
                 context.executeCallback( context );
             } ) };
@@ -135,10 +139,35 @@ function ForthConsole() {
                 context.executeCallback( context );
             } ) };
 
+        forthConsole.createTerminalResizer =
+          function(forthBuffer, screenBuffer, terminalContainer) { return(
+            function(context) {
+                resizeTerminal(screenBuffer, terminalContainer);
+                while ( screenBuffer.length != 0 ) {
+                    screenBuffer.shift();
+                }
+
+                var beginForthBufferRange = ( forthBuffer.length -
+                                              screenBuffer.maxLines - 1 );
+
+                var lineNum = 0;
+                for ( var lineIndex = beginForthBufferRange;
+                           lineIndex < forthBuffer.length;
+                           lineIndex++ ) {
+                    if ( forthBuffer[ lineIndex ] != undefined ) {
+                        screenBuffer.push( forthBuffer[ lineIndex ] );
+                    }
+                    lineNum += 1;
+                }
+                console.log( screenBuffer );
+            })
+        };
+
         return( forthConsole );
     }
 
-    function registerInputHandler(inputId, screenBuffer, commandHistory) {
+    function registerInputHandler(inputId, screenBuffer, forthBuffer,
+                                  commandHistory) {
         var handlerId = "Console" + inputId + "Handler"
         window[handlerId] = function() {
             forthInput = document.getElementById( "ConsoleInput" + inputId );
@@ -151,10 +180,10 @@ function ForthConsole() {
                 screenBuffer.shift()
             }
             screenBuffer.push( '$ ' + forthInput.value );
+            forthBuffer.push( '$ ' + forthInput.value );
             commandHistory.push( forthInput.value );
             newExecutionContext.execute( forthInput.value );
             forthInput.value = "";
-            // objectViewer.update();
         }
         return( handlerId );
     }
@@ -172,24 +201,29 @@ function ForthConsole() {
         screenBuffer.maxCols = Math.floor( 
             domObject.clientWidth / ( fontWidth ) ) - 1
         screenBuffer.maxLines = Math.floor( 
-            domObject.clientHeight / ( fontHeight ) ) - 3
+            domObject.clientHeight / ( fontHeight ) ) - 2
 
         console.log( "Terminal initialized with size:",
             screenBuffer.maxCols, screenBuffer.maxLines );
     }
 
-    function registerTerminalContext(context, screenBuffer) {
-        forthConsole = createForthHooks( screenBuffer );
+    function registerTerminalContext(context, screenBuffer, forthBuffer,
+                                     terminalContainer ) {
+        forthConsole = createForthHooks( screenBuffer, forthBuffer,
+                                         terminalContainer );
         context.dictionary.registerWords( {
             "print": forthConsole.createPrintHandler(),
+            ".": forthConsole.createPeekHandler(),
             "clearscreen": forthConsole.createClearScreenHandler(),
-            ".": forthConsole.createPeekHandler() } );
+            "resize-terminal": forthConsole.createTerminalResizer(forthBuffer,
+                screenBuffer, terminalContainer ) } );
         context.console = { 'output': forthConsole.createOutputHandler() };
     }
 
     this.createTerminal = function(context) {
-        var terminalDiv = context.stack.pop();
+        var terminalContainer = context.stack.pop();
         var screenBuffer = context.stack.pop();
+        var forthBuffer = [];
 
         var terminalId = Math.floor((Math.random() * 65536));
 
@@ -197,19 +231,20 @@ function ForthConsole() {
 
         // Register output Forth words in our context to the screenBuffer
         // in question.
-        registerTerminalContext( context, screenBuffer );
-        handlerId = registerInputHandler( terminalId, screenBuffer,
-            commandHistory  );
+        registerTerminalContext( context, screenBuffer, forthBuffer,
+                                 terminalContainer );
+        handlerId = registerInputHandler( terminalId, screenBuffer, forthBuffer,
+                                          commandHistory );
 
         var ractiveParams = {};
         var ractiveData = {};
-        ractiveParams[ 'el' ] = terminalDiv;
+        ractiveParams[ 'el' ] = terminalContainer;
         ractiveParams[ 'template' ] =
             [ "<table border='0' cellspacing='2' cellpadding='2' ",
-              "id='ConsoleContainer'>",
+              "style='border-spacing=0;' id='ConsoleContainer'>",
               "<tbody>",
               "{{#Console", terminalId, "}}",
-              "<tr><td nowrap height='15' class='term' colspan='2'>",
+              "<tr><td nowrap class='term' colspan='2'>",
               "{{{ . }}}",
               "</td></tr>",
               "{{/Console", terminalId, "}}",
@@ -230,7 +265,7 @@ function ForthConsole() {
 
         // We figure out the size of our terminal container to determine 
         // the number of columns and rows.
-        resizeTerminal( screenBuffer, terminalDiv );
+        resizeTerminal( screenBuffer, terminalContainer );
 
         context.executeCallback( context );
 

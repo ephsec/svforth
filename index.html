@@ -24,15 +24,18 @@
         importJSLibrary('forth/canvas.js');
         importJSLibrary('forth/ds.js' );
         importJSLibrary('forth/url.js' );
-        importJSLibrary('forth/rubicon.js');
         importJSLibrary('forth/console.js');
         initialContext.execute(
           'forth/rss.f load-forth \
            forth/canvas.f load-forth \
-           [ Initializing... ] ForthConsole create-terminal \
+           [ ] ForthConsole create-terminal \
            ." SVFORTH System " print \
            ." (c) 2013 Ephemeral Security " print' );
+        window.onresize = function() {
+            initialContext.execute( "resize-terminal" ) };
       }
+
+
 
       document.addEventListener("DOMContentLoaded", function(event) {
         initialize();
