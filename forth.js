@@ -72,7 +72,7 @@ function call(symbol, inputContext) {
   }
 
   // We obtain out function by a symbol lookup against our current context.
-  fn = context.dictionary.getWord( symbol );
+  var fn = context.dictionary.getWord( symbol );
 
   // Make sure our return value is undefined.
   context.returnValue = undefined;
@@ -161,7 +161,7 @@ var createDictionary = function( spec ) {
 
   // The heart of soul, definition retrieval from our dictionary.
   dictionary.getWord = function( tokenString ) {
-    word = this.definitions[ tokenString ];
+    var word = this.definitions[ tokenString ];
 
     // if we have a precompiled word, we return the tokens as a new array,
     // to ensure that the original precompiled word isn't sliced away
@@ -193,7 +193,7 @@ var applyExecutionContext = function( context ) {
     if ( typeof input === 'undefined' ) {
       // We were not passed any input to execute, so we execute the tokens that
       // are already set in the current context.
-      input = context.tokens;
+      var input = context.tokens;
     };
 
     // console.log( input );
@@ -201,15 +201,15 @@ var applyExecutionContext = function( context ) {
     if ( typeof( input ) === "string" ) {
       // If we're a string, we split along a whitespace delimiter, for crude
       // 'tokenization'.
-      tokens = input.split( /\s/ );
+      var tokens = input.split( /\s/ );
     } else if ( typeof( input ) == "object" ) {
       // We were passed an array, so we want to make a copy of the array rather
       // than operate directly on the array.  Operating on a definition would
       // be very bad, and break us.
       if ( 'slice' in input ) {
-        tokens = input.slice(0);
+        var tokens = input.slice(0);
       } else {
-        tokens = [ input ];
+        var tokens = [ input ];
       }
     } else {
       // We don't know what the hell we were passed.
@@ -226,7 +226,7 @@ var applyExecutionContext = function( context ) {
 
     // console.log( "Execute called:", input, this.tokens );
 
-    tokens = this.preprocessInput( input );
+    var tokens = this.preprocessInput( input );
 
     // Rather than replace the tokens, we inject our execution *before* the
     // currently existing tokens in the stream.
@@ -280,7 +280,7 @@ var applyExecutionContext = function( context ) {
         // We have another context to return to, so we execute the callback
         // on the old context to return control to it.
         // console.log( "Execution done, returning context.", this )
-        returnContext = this.returnContext;
+        var returnContext = this.returnContext;
         this.executeCallback( returnContext );
         return
       } else {
@@ -310,7 +310,7 @@ var applyExecutionContext = function( context ) {
       } else if (currToken in this.dictionary.definitions) {
         // We're in the dictionary, so we do a lookup and retrieve the
         // definition.
-        word = this.dictionary.getWord( currToken );
+        var word = this.dictionary.getWord( currToken );
         if ( typeof( word ) == 'function' ) {
           // We found a JavaScript function or closure stored in the definition,
           // so we execute it, with the callback to move onto the next token.
@@ -318,7 +318,7 @@ var applyExecutionContext = function( context ) {
         } else if ( typeof( word ) === 'string' ) {
           // We found a definition that only contains a string, so we need
           // to execute it as an input stream.
-          word = this.compile( word.split(/\s/) );
+          var word = this.compile( word.split(/\s/) );
           this.tokens = word.concat( this.tokens );
           this.nextToken.apply( this );
           return;
@@ -328,7 +328,7 @@ var applyExecutionContext = function( context ) {
 
           // We splice to copy the word to ensure that the original definition
           // do not get tampered with.
-          copyWord = word.splice(0);
+          var copyWord = word.splice(0);
           this.tokens = copyWord.concat( this.tokens );
           this.nextToken.apply( this );
           return;
@@ -367,7 +367,7 @@ var applyExecutionContext = function( context ) {
   }
 
   this.scanUntil = function( token, context ) {
-    next = context.tokens.indexOf( token );
+    var next = context.tokens.indexOf( token );
     if ( next != -1 ) {
       context.tokens.splice( next, 1 );
       return( context.tokens.splice( 0, next ) );
@@ -396,7 +396,7 @@ var applyExecutionContext = function( context ) {
           tokens.splice( tokenIndex, tokens.indexOf( ")" ) - tokenIndex + 1 );
         // We skip blocks.
         } else if ( token == "[" ) {
-          endBlock = tokens.indexOf( "]", tokenIndex )
+          var endBlock = tokens.indexOf( "]", tokenIndex )
           if ( !( endBlock ) ) {
             throw( "COMPILE ERROR: No terminating ] found for [ block." );
           };
@@ -457,8 +457,9 @@ var applyExecutionContext = function( context ) {
 
   this.showTokens = function( context ) {
     var tokenOutput = "";
+    var tokenRep = undefined;
     for (tokenIndex in context.tokens) {
-      token = context.tokens[ tokenIndex ];
+      var token = context.tokens[ tokenIndex ];
       if ( typeof( token ) === 'undefined' ) {
         tokenRep = 'undefined';
       } else if ( token.hasOwnProperty( 'tokenName' ) ) {
@@ -490,16 +491,18 @@ ForthFns = {
   // : word ... ; -- our Forth word definitions.
   ":": function( context ) {
     var defineBlock = context.scanUntil( ";", context )
+    var definition = undefined;
+    var newWord = undefined;
 
     if ( defineBlock != undefined ) {
       // Our new word to define and put in the Dictionary.
-      var newWord = defineBlock[0];
+      newWord = defineBlock[0];
       // Our definition for the word is the rest of the statement up to ';'
-      var definition = defineBlock.splice( 1, defineBlock.length );
+      definition = defineBlock.splice( 1, defineBlock.length );
       // We compile our definition before storing it -- this speeds up
       // execution by replacing strings with function references in the
       // token array where appropriate.
-      var definition = context.compile( definition );
+      definition = context.compile( definition );
       // Actually define our word, just like JavaScript and Python does.
       context.dictionary.register( newWord, definition )
       context.executeCallback( context )
@@ -588,14 +591,10 @@ createStack = function(name, context) {
   stack.popMany = function(indices) {
     var popItems = [];
 
-    console.log( "POPMANY!" );
-
     var count = 0;
     while ( indices.length > 0 ) {
       var index = indices.pop();
-      console.log( "TEST:", this[ index ] );
       var item = [].splice.apply( this, [ index - count + 1, 1 ] )[0];
-      console.log( "PM:", count, item.Geo.country );
       popItems.push( item );
       count += 1;
     }
@@ -719,8 +718,6 @@ StackFns = {
     var blockToExecute = context.stack.pop();
     var stackToWatch = context.stack.pop();
 
-    console.log( blockToExecute, stackToWatch );
-
     if ( !( stackToWatch in context.stacks ) ) {
       context.stacks[ stackToWatch ] = createStack( stackToWatch, context );
     };
@@ -759,7 +756,7 @@ StackFns = {
     },
 
   'pop-stack': function( context ) {
-      sourceStack = context.stacks[ context.stack.pop() ];
+      var sourceStack = context.stacks[ context.stack.pop() ];
       context.stack.push( sourceStack.pop() );
       context.executeCallback( context );
     },
@@ -801,7 +798,7 @@ StackFns = {
 
   // dup - ( a b c ) -> ( a b c c ), []
   'dup': function( context ) {
-      item = context.stack[ context.stack.length - 1 ];
+      var item = context.stack[ context.stack.length - 1 ];
       context.stack.push( item );
       context.executeCallback( context );
     },
@@ -814,7 +811,7 @@ StackFns = {
 
   // nip - ( a b c d ) ->  ( a b d )
   'nip': function( context ) {
-      top = context.stack.pop();
+      var top = context.stack.pop();
       context.stack.pop();
       context.stack.push( top );
       context.executeCallback( context );
@@ -822,18 +819,18 @@ StackFns = {
 
   // rot -- ( a b c ) -> ( b a c )
   'rot': function( context ) {
-      first = context.stack.pop();
-      second = context.stack.pop();
-      third = context.stack.pop();
+      var first = context.stack.pop();
+      var second = context.stack.pop();
+      var third = context.stack.pop();
       context.stack.push( second, third, first );
       context.executeCallback( context );
     },
 
   // min_rot -- ( a b c ) -> ( c a b )
   '-rot': function( context ) {
-      first = context.stack.pop();
-      second = context.stack.pop();
-      third = context.stack.pop();
+      var first = context.stack.pop();
+      var second = context.stack.pop();
+      var third = context.stack.pop();
       context.stack.push( first, third, second );
       context.executeCallback( context );
     },
@@ -862,7 +859,7 @@ StackFns = {
 
   // Report on our current stack depth.
   'depth': function( context ) {
-      retval = context.stack.length;
+      var retval = context.stack.length;
       context.stack.push( retval );
       context.executeCallback( context );
     },
@@ -917,7 +914,7 @@ splitString = 0;
 parseString = 1;
 
 parseSplitString = function( stringObject, delim, parseOrSplit ) {
-    findDelim = stringObject.search( delim );
+    var findDelim = stringObject.search( delim );
     if ( findDelim ) {
       return( [ stringObject.split( delim, 1 )[0],
                 stringObject.substr( findDelim + parseOrSplit ),
@@ -932,9 +929,9 @@ parseSplitString = function( stringObject, delim, parseOrSplit ) {
 StringFns = {
   // ."                                              ( ." a b c " -- "a b c" )
   '."': function( context ) {
-    stringBlock = context.scanUntil( '"', context );
+    var stringBlock = context.scanUntil( '"', context );
     if ( stringBlock != undefined ) {
-      stringObject = stringBlock.join( " " );
+      var stringObject = stringBlock.join( " " );
       context.stack.push( stringObject );
     } else {
       throw( "Unterminated string found." );
@@ -967,9 +964,9 @@ StringFns = {
   // is the portion of $1 from the delimiter (inclusive) to the end.  If not
   // found, head$ is $1 and tail$ is empty (i.e. its length is 0).
   'split-string': function( context ) {
-    stringSplit = parseSplitString( context.stack.pop(),
-                                    context.stack.pop(),
-                                    splitString );
+    var stringSplit = parseSplitString( context.stack.pop(),
+                                        context.stack.pop(),
+                                        splitString );
     context.stack.push( stringSplit[ 0 ], stringSplit[ 1 ] );
     context.executeCallback( context );
   },
@@ -981,9 +978,9 @@ StringFns = {
   // portion of $1 after the delimiter (not inclusive) to the end.  If not
   // found, head$ is $1 and tail$ is empty (i.e. its length is 0).
   'left-parse-string': function( context ) {
-    stringSplit = parseSplitString( context.stack.pop(),
-                                    context.stack.pop(),
-                                    parseString );
+    var stringSplit = parseSplitString( context.stack.pop(),
+                                        context.stack.pop(),
+                                        parseString );
     context.stack.push( stringSplit[ 0 ], stringSplit[ 1 ] );
     context.executeCallback( context );
   },
@@ -997,9 +994,9 @@ StringFns = {
   // true.  If not found, $1 is the original value of $1 and the top of
   // the stack is false.
   'lex': function( context ) {
-    stringSplit = parseSplitString( context.stack.pop(),
-                                    context.stack.pop(),
-                                    parseString );
+    var stringSplit = parseSplitString( context.stack.pop(),
+                                        context.stack.pop(),
+                                        parseString );
     if ( stringSplit[2] === true ) {
       context.stack.push( stringSplit[ 0 ], // head
                           stringSplit[ 1 ], // tail
@@ -1095,10 +1092,10 @@ LoopFns = {
     // begin .. again -- our loop functions, which really needs to be enhanced
     // to allow for conditionals.
     'begin': function( context ) {
-      againBlock = context.scanUntil( "again", context );
+      var againBlock = context.scanUntil( "again", context );
 
       if ( againBlock != undefined ) {
-        block = context.compile( againBlock );
+        var block = context.compile( againBlock );
         context.tokens = block.concat( [ "begin" ], block, [ "again" ] );
         context.executeCallback( context );
       } else {
@@ -1144,7 +1141,7 @@ ExecutionFns = {
   // Execute Forth block, this is currently run asynchronously now that loops
   // inject more tokens into the stream rather than execute a new context.
   '|': function( context ) {
-    forthCoro = context.stack.pop();
+    var forthCoro = context.stack.pop();
 
     newContext = applyExecutionContext.apply( createContext( context ) );
     newContext.execute( forthCoro );
@@ -1154,7 +1151,7 @@ ExecutionFns = {
   // A Forth RPC -- we can send a Forth execution block to a server to
   // execute on our behalf.
   '#': function( context ) {
-    forthExecutionBlock = context.stack.pop();
+    var forthExecutionBlock = context.stack.pop();
 
     // We actually block the main execution thread until we complete getting
     // a response back.  Server responses are encoded in JSON, with an array
