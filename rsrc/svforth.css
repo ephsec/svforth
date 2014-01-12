@@ -8,11 +8,6 @@ body {
   height: 95%;
 }
 
-
-.screen {
-  height: 600px;
-}
-
 .ForthCanvas {
   position: absolute;
   top: 0;
