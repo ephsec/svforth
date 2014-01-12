@@ -224,13 +224,14 @@ var applyExecutionContext = function( context ) {
     // instead leveraging the fact that we're a context object ourself; this
     // segues into apply() very well.
 
-    // console.log( "Execute called:", input, this.tokens );
 
     var tokens = this.preprocessInput( input );
 
     // Rather than replace the tokens, we inject our execution *before* the
     // currently existing tokens in the stream.
     this.tokens = tokens.concat( this.tokens );
+
+    // console.log( "Execute called:", this.tokens, this.stack );
 
     // If we reach the end of execution of this context, we can return to a
     // different context.
@@ -455,6 +456,26 @@ var applyExecutionContext = function( context ) {
     return( tokens );
   }
 
+  this.startCoro = function( context, items, coro ) {
+        var coroContext = Object.create( context );
+        coroContext.tokens = [];
+        coroStackId = '#'+Math.floor(Math.random()*16777215).toString(16)
+        coroContext.stacks[ coroStackId ] = [];
+        coroContext.stack = coroContext.stacks[ coroStackId ];
+        coroContext.writeStack = coroContext.stack;
+        coroContext.stack.name = coroStackId;
+
+        // Insert our items to work upon onto our temporary channel stack.
+        [].push.apply( coroContext.stack, items );
+
+        // We execute our channel code on our channelContext.
+        coroContext.execute( coro.slice(0) );
+
+        // And finally, we return the context after the coro run has
+        // completed so that the caller can inspect the results if need be.
+        return( coroContext );
+  }
+
   this.showTokens = function( context ) {
     var tokenOutput = "";
     var tokenRep = undefined;
@@ -526,7 +547,6 @@ ForthFns = {
   };
 
 // Core stack functions in Forth
-
 createStack = function(name, context) {
   var channelFired = false;
   var stack = [];
@@ -543,20 +563,9 @@ createStack = function(name, context) {
 
     if ( this.popSubscriptions.length ) {
       for ( subscription in this.popSubscriptions ) {
-        var subscriptionContext = Object.create( context );
-        subscriptionContext.tokens = [];
-        subscriptionStackId = '#'+Math.floor(Math.random()*16777215).toString(16)
-        subscriptionContext.stacks[ subscriptionStackId ] = [];
-        subscriptionContext.stack = subscriptionContext.stacks[ subscriptionStackId ];
-        subscriptionContext.writeStack = subscriptionContext.stack;
-        subscriptionContext.stack.name = subscriptionStackId;
-
-        // Insert our items to work upon onto our temporary channel stack.
-        [].push.apply( subscriptionContext.stack, [ popItem ] );
-
-        // We execute our channel code on our channelContext.
-        subscriptionContext.execute(
-          this.popSubscriptions[ subscription ].slice(0) );
+        context.startCoro( context,
+                           [ popItem ],
+                           this.popSubscriptions[ subscription ].slice(0) );
       }
     }
 
@@ -568,20 +577,9 @@ createStack = function(name, context) {
 
     if ( this.popSubscriptions.length ) {
       for ( subscription in this.popSubscriptions ) {
-        var subscriptionContext = Object.create( context );
-        subscriptionContext.tokens = [];
-        subscriptionStackId = '#'+Math.floor(Math.random()*16777215).toString(16)
-        subscriptionContext.stacks[ subscriptionStackId ] = [];
-        subscriptionContext.stack = subscriptionContext.stacks[ subscriptionStackId ];
-        subscriptionContext.writeStack = subscriptionContext.stack;
-        subscriptionContext.stack.name = subscriptionStackId;
-
-        // Insert our items to work upon onto our temporary channel stack.
-        [].push.apply( subscriptionContext.stack, spliceItems );
-
-        // We execute our channel code on our channelContext.
-        subscriptionContext.execute(
-          this.popSubscriptions[ subscription ].slice(0) );
+        context.startCoro( context,
+                           spliceItems,
+                           this.popSubscriptions[ subscription ].slice(0) );
       }
     }
 
@@ -593,28 +591,19 @@ createStack = function(name, context) {
 
     var count = 0;
     while ( indices.length > 0 ) {
-      var index = indices.pop();
-      var item = [].splice.apply( this, [ index - count + 1, 1 ] )[0];
+      var index = indices.shift();
+      var item = [].splice.apply( this, [ index - count, 1 ] )[0];
       popItems.push( item );
       count += 1;
     }
 
+    // If we have any subscribers interested in removal events, we iterate
+    // through them and execute each as a coroutine.
     if ( this.popSubscriptions.length ) {
       for ( subscription in this.popSubscriptions ) {
-        var subscriptionContext = Object.create( context );
-        subscriptionContext.tokens = [];
-        subscriptionStackId = '#'+Math.floor(Math.random()*16777215).toString(16)
-        subscriptionContext.stacks[ subscriptionStackId ] = [];
-        subscriptionContext.stack = subscriptionContext.stacks[ subscriptionStackId ];
-        subscriptionContext.writeStack = subscriptionContext.stack;
-        subscriptionContext.stack.name = subscriptionStackId;
-
-        // Insert our items to work upon onto our temporary channel stack.
-        [].push.apply( subscriptionContext.stack, popItems );
-
-        // We execute our channel code on our channelContext.
-        subscriptionContext.execute(
-          this.popSubscriptions[ subscription ].slice(0) );
+        context.startCoro( context,
+                           popItems,
+                           this.popSubscriptions[ subscription ].slice(0) );
       }
     }
   }
@@ -626,6 +615,8 @@ createStack = function(name, context) {
       var args = [ arguments[0] ];
     }
 
+    // We sometimes want to redirect a stack write to another stack, in the case
+    // of a pipe.
     if ( context.hasOwnProperty( 'writeStack' ) && !( stack.ignoreRedirect ) ) {
       if ( context.writeStack.name !== this.name ) {
         context.writeStack.push.apply( context.writeStack, args );
@@ -633,45 +624,23 @@ createStack = function(name, context) {
       }
     }
 
+    // If we have any subscribers interested in removal events, we iterate
+    // through them and execute each as a coroutine.
     if ( this.subscriptions.length ) {
       for ( subscription in this.subscriptions ) {
-        // We create a new context each time we call a channel on a stack,
-        // with a temporary local stack.
-        var subscriptionContext = Object.create( context );
-        subscriptionContext.tokens = [];
-        subscriptionStackId = '#'+Math.floor(Math.random()*16777215).toString(16)
-        subscriptionContext.stacks[ subscriptionStackId ] = [];
-        subscriptionContext.stack = subscriptionContext.stacks[ subscriptionStackId ];
-        subscriptionContext.writeStack = subscriptionContext.stack;
-        subscriptionContext.stack.name = subscriptionStackId;
-
-        // Insert our items to work upon onto our temporary channel stack.
-        [].push.apply( subscriptionContext.stack, args );
-
-        // We execute our channel code on our channelContext.
-        subscriptionContext.execute(
-          this.subscriptions[ subscription ].slice(0) );
-
-      };
+        context.startCoro( context,
+                           args,
+                           this.subscriptions[ subscription ].slice(0) );
+      }
     };
 
     if ( this.filters.length ) {
       for ( filter in this.filters ) {
         // We create a new context each time we call a channel on a stack,
         // with a temporary local stack.
-        var filterContext = Object.create( context );
-        filterContext.tokens = [];
-        filterStackId = '#'+Math.floor(Math.random()*16777215).toString(16)
-        filterContext.stacks[ filterStackId ] = [];
-        filterContext.stack = filterContext.stacks[ filterStackId ];
-        filterContext.writeStack = filterContext.stack;
-        filterContext.stack.name = filterStackId;
-
-        // Insert our items to work upon onto our temporary channel stack.
-        [].push.apply( filterContext.stack, args );
-
-        // We execute our channel code on our channelContext.
-        filterContext.execute( this.filters[ filter ].slice(0) );
+        filterContext = context.startCoro( context,
+                                           args,
+                                           this.filters[ filter ].slice(0) );
 
         // We then copy the temporary stack contents into the stack that the
         // channel was associated with.
@@ -1048,9 +1017,9 @@ ConditionalFns = {
   "0>=": function( context ) {
       conditional( context.stack.pop() < 0, context );
     },
-    "0<=": function( context ) {
+  "0<=": function( context ) {
       conditional( context.stack.pop() > 0, context );
-    },
+  },
   "true": function( context ) {
       stack.push( -1 );
       context.executeCallback( context );
