@@ -88,6 +88,7 @@ function ForthConsole() {
                     screenBuffer.push( wrappedLines[ line ] );
                     forthBuffer.push( wrappedLines[ line ] );
                 }
+
             } ) } ;
 
         forthConsole.createPrintHandler = function() { return(
@@ -201,7 +202,7 @@ function ForthConsole() {
         screenBuffer.maxCols = Math.floor( 
             domObject.clientWidth / ( fontWidth ) ) - 1
         screenBuffer.maxLines = Math.floor( 
-            domObject.clientHeight / ( fontHeight ) ) - 2
+            domObject.clientHeight / ( fontHeight ) ) - 1
 
         console.log( "Terminal initialized with size:",
             screenBuffer.maxCols, screenBuffer.maxLines );
@@ -258,8 +259,6 @@ function ForthConsole() {
               "</table>" ].join("");
         ractiveData[ 'Console' + terminalId ] = screenBuffer;
         ractiveParams[ 'data' ] = ractiveData;
-
-        console.log( ractiveParams );
 
         var terminalReactor = new Ractive(ractiveParams);
 
