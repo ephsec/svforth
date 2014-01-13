@@ -814,7 +814,8 @@ StackFns = {
   '.s': function( context ) {
       // console.log( "CONSOLE:", context );
       for (var s=0; s<context.stack.length; s++) {
-        if ( typeof( context.console ) !== 'undefined') {
+        if ( typeof( context.console ) !== 'undefined' &&
+             context.console.hasOwnProperty( 'output' ) ) {
           context.console.output( context.stack.name + ":" + s + " = " +
                                context.stack[s] );
         } else {
