@@ -102,7 +102,7 @@ Below is an example of an actual SVFORTH program, `randrect` that randomly splas
   0 255 rand 0 255 rand 0 255 rand    ( red, green, blue )
   fillcolor ;                         ( set our color )
 
-: randrect
+: putrect
   0 800 rand 0 600 rand               ( upper left coordinates )
   0 800 rand 0 600 rand               ( lower right coordinates )
   rect ;                              ( actually draw the rectangle )
